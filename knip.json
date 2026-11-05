@@ -1,6 +1,6 @@
 {
 	"$schema": "https://unpkg.com/knip@5/schema.json",
-	"entry": ["src/engine/index.ts", "src/engine/whatsapp/whatsapp-connection.ts"],
-	"project": ["src/**/*.{ts,tsx}"],
+	"entry": ["src/engine/index.ts", "src/engine/whatsapp/whatsapp-connection.ts", "bench/*.ts"],
+	"project": ["src/**/*.{ts,tsx}", "bench/**/*.ts"],
 	"ignoreDependencies": ["tailwindcss"]
 }

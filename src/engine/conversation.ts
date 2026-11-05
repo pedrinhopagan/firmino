@@ -74,13 +74,14 @@ const providers = {
 /** The one conversation Kolega keeps: its messages, the provider that answers and the turn in progress. */
 export class Conversation {
   private readonly sessions = new Map<ProviderId, ProviderSession>()
+  private readonly idleTimers = new Map<ProviderId, ReturnType<typeof setTimeout>>()
   private readonly publisher = new EventPublisher<{ event: ConversationEvent }>({ maxBufferedEvents: Number.POSITIVE_INFINITY })
   private running?: { session: ProviderSession; reply: string; tool?: string; started: ConversationEvent }
   /** Settles when the turn in progress ends. */
   private idle: Promise<TurnOutcome> = Promise.resolve("completed")
   private loginShellPath?: Promise<void>
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly mcp: KolegaMcpConnection, private readonly onQueuedTurnEnd: (end: QueuedTurnEnd) => void) {}
+  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly mcp: KolegaMcpConnection, private readonly providerIdleMs: number, private readonly onQueuedTurnEnd: (end: QueuedTurnEnd) => void) {}
 
   async send(text: string) {
     await this.providerPath()
@@ -166,6 +167,7 @@ export class Conversation {
   }
 
   private session(provider: ProviderId) {
+    clearTimeout(this.idleTimers.get(provider))
     const existing = this.sessions.get(provider)
 
     if (existing) {
@@ -188,6 +190,15 @@ export class Conversation {
     this.sessions.set(provider, session)
 
     return session
+  }
+
+  private closeWhenIdle(provider: ProviderId) {
+    this.idleTimers.set(provider, setTimeout(() => {
+      this.idleTimers.delete(provider)
+      this.sessions.get(provider)?.close()
+      this.sessions.delete(provider)
+      this.observability.event({ name: "provider.idleclosed", attributes: { provider } })
+    }, this.providerIdleMs))
   }
 
   private start(turn: QueuedTurn) {
@@ -223,6 +234,7 @@ export class Conversation {
     })).catch((error: unknown): TurnResult => ({ outcome: "failed", error: errorMessage(error) }))
     const reply = this.running?.reply.trim()
     this.running = undefined
+    this.closeWhenIdle(turn.provider)
     const message = reply ? this.database.messages.insert({ role: "assistant", text: reply, provider: turn.provider }) : undefined
 
     this.publisher.publish("event", { type: "finished", outcome: result.outcome, ...(message ? { message } : {}), ...(result.error ? { error: result.error } : {}) })

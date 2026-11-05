@@ -40,7 +40,7 @@ const baseObservation = {
   error: normalizedObservationError.optional(),
 }
 
-const observation = z.discriminatedUnion("kind", [
+export const observation = z.discriminatedUnion("kind", [
   z.strictObject({ ...baseObservation, kind: z.literal("event") }),
   z.strictObject({ ...baseObservation, kind: z.literal("span"), durationMs: z.number(), outcome }),
 ])

@@ -16,6 +16,8 @@
     "build:electron": "electron-vite build",
     "build": "bun run build:engine && bun run build:electron",
     "package:linux": "bun run build && electron-builder --linux",
+    "bench:boot": "bun bench/boot.ts",
+    "bench:memory": "bun bench/memory.ts",
     "typecheck": "tsc --noEmit",
     "check": "juicerq-check",
     "check:fix": "juicerq-check --fix"

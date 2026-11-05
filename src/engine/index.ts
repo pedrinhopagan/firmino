@@ -16,12 +16,14 @@ import { Routines } from "./routines"
 import { Triggers } from "./triggers"
 import { Whatsapp } from "./whatsapp/whatsapp"
 
+const providerIdleDefaultMs = 5 * 60_000
 const environment = parse(z.object({
   KOLEGA_ENGINE_TOKEN: z.string().min(1),
   KOLEGA_DATA_DIRECTORY: z.string().min(1),
   KOLEGA_DEVELOPMENT: z.enum(["true", "false"]),
   KOLEGA_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   KOLEGA_GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  KOLEGA_PROVIDER_IDLE_MS: z.coerce.number().int().positive().default(providerIdleDefaultMs),
 }), process.env)
 // Providers inherit the Engine's environment and run any command the agent asks for; they reach Kolega only through the MCP token.
 delete process.env.KOLEGA_ENGINE_TOKEN
@@ -88,7 +90,7 @@ const conversation = new Conversation(database, observability, {
   get url() {
     return `http://127.0.0.1:${server.port}${kolegaMcpPath}`
   },
-}, (end) => {
+}, environment.KOLEGA_PROVIDER_IDLE_MS, (end) => {
   const notice = turnNotice(end)
 
   if (notice) {

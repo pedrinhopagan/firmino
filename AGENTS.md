@@ -15,3 +15,9 @@ Shells abertos pelo T3 Code herdam `ELECTRON_RUN_AS_NODE=1`, que faz o Electron 
 O modo dev guarda os dados em `~/.config/kolega-dev` e expõe o Chromium para automação em `127.0.0.1:9250`. Os spans de desempenho ficam em `logs/observations.jsonl` dentro dessa pasta.
 
 Meça a memória pelo PSS de `/proc/<pid>/smaps_rollup`. A soma do RSS conta várias vezes a memória que os processos do Chromium compartilham.
+
+# Desempenho
+
+Rode `bun run build` antes dos benches, porque eles medem o build de produção. Rode-os numa tela virtual aninhada (`kwin_wayland --virtual --no-lockscreen`, com D-Bus próprio), porque a janela abre. Sem `--no-lockscreen`, a tela virtual bloqueia e o Renderer para de pintar.
+
+O `bench:memory` roda um turno curto em cada fornecedor, então precisa dos dois logados e gasta tokens. Ele fala com o app pela porta CDP do perfil de dev, por isso não mede o AppImage. O PSS do `codex` varia entre rodadas, porque ele divide páginas com outros processos `codex` abertos no computador.

@@ -60,6 +60,7 @@ export class EngineProcess {
         KOLEGA_DEVELOPMENT: this.options.development ? "true" : "false",
         ...(this.options.googleClient ? { KOLEGA_GOOGLE_CLIENT_ID: this.options.googleClient.id } : {}),
         ...(this.options.googleClient?.secret ? { KOLEGA_GOOGLE_CLIENT_SECRET: this.options.googleClient.secret } : {}),
+        ...(process.env.KOLEGA_PROVIDER_IDLE_MS ? { KOLEGA_PROVIDER_IDLE_MS: process.env.KOLEGA_PROVIDER_IDLE_MS } : {}),
       },
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     })

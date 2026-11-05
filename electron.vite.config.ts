@@ -24,6 +24,7 @@ export default defineConfig({
   renderer: {
     resolve,
     plugins: [tailwindcss(), react()],
+    build: { minify: true },
     server: { host: "127.0.0.1", port: 5175 },
   },
 })
