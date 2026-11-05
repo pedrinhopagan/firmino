@@ -1,15 +1,13 @@
 import { MinusIcon, Square2StackIcon, XMarkIcon } from "@heroicons/react/24/outline"
-import type { EngineHealth } from "@src/shared/engine-contract"
+import { Chat } from "./chat/chat"
+import type { EngineClient } from "./engine-client"
 import { IconButton } from "./ui/icon-button"
 
-export function App({ health }: { health: EngineHealth | null }) {
+export function App({ client }: { client: EngineClient }) {
   return (
-    <main className="relative flex h-dvh w-full flex-col items-center justify-center gap-2 overflow-hidden bg-canvas font-sans text-primary">
+    <main className="relative flex h-dvh w-full flex-col items-center overflow-hidden bg-canvas font-sans text-primary">
       <WindowControls />
-      <h1 className="text-title font-semibold">Kolega</h1>
-      {health
-        ? <p className="flex items-center gap-2 text-support text-muted" role="status"><span className="size-1.5 rounded-full bg-status-success" aria-hidden="true" />Engine pronto · {health.runtime}</p>
-        : <p className="flex items-center gap-2 text-support text-status-error" role="alert"><span className="size-1.5 rounded-full bg-status-error" aria-hidden="true" />Não foi possível falar com o Engine.</p>}
+      <Chat client={client} />
     </main>
   )
 }

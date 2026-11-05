@@ -43,3 +43,5 @@ export function createEngineClient(connection: EngineConnection) {
 
   return client
 }
+
+export type EngineClient = ReturnType<typeof createEngineClient>

@@ -1,5 +1,7 @@
 import { implement, ORPCError } from "@orpc/server"
 import { engineContract } from "@src/shared/engine-contract"
+import type { Conversation } from "./conversation"
+import type { KolegaDatabase } from "./database"
 import type { ObservationReceiver, Observability } from "./observability"
 
 export interface EngineContext { traceId?: string; spanId?: string }
@@ -13,12 +15,20 @@ function surfaced(error: unknown) {
   return new ORPCError("BAD_REQUEST", { message: error instanceof Error ? error.message : "Unknown error", cause: error })
 }
 
-export function createEngineRouter({ startedAt, observability, receiver }: { startedAt: string; observability: Observability; receiver: ObservationReceiver }) {
+async function* surfacedStream<T>(stream: AsyncIterable<T>) {
+  try {
+    yield* stream
+  } catch (error) {
+    throw surfaced(error)
+  }
+}
+
+export function createEngineRouter({ startedAt, observability, receiver, database, conversation }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; conversation: Conversation }) {
   const operations = implement(engineContract).$context<EngineContext>().use(async ({ next, context, path }) => {
     try {
       const operation = path.join(".").toLowerCase()
 
-      if (operation.startsWith("observations.")) {
+      if (operation.startsWith("observations.") || operation === "conversation.events") {
         return await next()
       }
 
@@ -32,6 +42,17 @@ export function createEngineRouter({ startedAt, observability, receiver }: { sta
     health: operations.health.handler(() => ({ status: "ready", runtime: `Bun ${Bun.version}`, startedAt })),
     observations: {
       rendererSpan: operations.observations.rendererSpan.handler(({ input }) => receiver.span(input)),
+    },
+    conversation: {
+      messages: operations.conversation.messages.handler(({ input }) => database.messages.page(input.before)),
+      send: operations.conversation.send.handler(({ input }) => conversation.send(input.text)),
+      events: operations.conversation.events.handler(({ signal }) => surfacedStream(conversation.events(signal))),
+      interrupt: operations.conversation.interrupt.handler(() => conversation.interrupt()),
+    },
+    providers: {
+      status: operations.providers.status.handler(() => conversation.status()),
+      active: operations.providers.active.handler(() => conversation.active()),
+      choose: operations.providers.choose.handler(({ input }) => conversation.choose(input)),
     },
   })
 }
