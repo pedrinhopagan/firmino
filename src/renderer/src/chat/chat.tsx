@@ -73,6 +73,7 @@ function Messages({ client }: { client: EngineClient }) {
             {messages.isFetchingNextPage ? "Carregando…" : "Mostrar anteriores"}
           </Button>
         )}
+        {messages.error && <p className="my-auto max-w-64 self-center text-center text-xs text-destructive-foreground" role="alert">Não foi possível carregar a conversa: {messages.error.message}</p>}
         {empty && <p className="my-auto max-w-64 self-center text-center text-xs text-muted-foreground">Peça algo ao Kolega. As Rotinas e os Gatilhos também respondem aqui.</p>}
         {cached.slice(hidden).map((message) => <Message key={message.id} message={message} />)}
         <LiveReply />

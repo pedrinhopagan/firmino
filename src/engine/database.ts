@@ -33,11 +33,13 @@ export function openDatabase(path: string) {
     db.run("ALTER TABLE messages ADD COLUMN trigger TEXT")
   }
 
-  // Messages from before provider accounts belong to the default account, whose id is the provider's.
   if (!db.query("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'account'").get()) {
     db.run("ALTER TABLE messages ADD COLUMN account TEXT")
-    db.run("UPDATE messages SET account = provider")
   }
+
+  // Messages from before provider accounts belong to the default account, whose id is the provider's.
+  // It runs on every start, because an Engine from before accounts can still write to this file after the column exists.
+  db.run("UPDATE messages SET account = provider WHERE account IS NULL")
 
   db.run("DROP INDEX IF EXISTS messages_answers")
   db.run("CREATE INDEX IF NOT EXISTS messages_account_answers ON messages (account, role, id)")
@@ -45,6 +47,9 @@ export function openDatabase(path: string) {
   // The provider chosen before accounts is now its default account, whose id is the provider's.
   db.run("INSERT OR IGNORE INTO state (key, value) SELECT 'account', value FROM state WHERE key = 'provider'")
   db.run("DELETE FROM state WHERE key = 'provider'")
+  // Favorites starred per provider, before accounts, belong to the provider's default account.
+  db.run("INSERT OR IGNORE INTO state (key, value) SELECT 'favorites', (SELECT json_group_array(json_object('account', json_extract(favorite.value, '$.provider'), 'model', json_extract(favorite.value, '$.model'))) FROM json_each(state.value) AS favorite) FROM state WHERE key = 'model.favorites'")
+  db.run("DELETE FROM state WHERE key = 'model.favorites'")
   db.run(`CREATE TABLE IF NOT EXISTS routines (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
