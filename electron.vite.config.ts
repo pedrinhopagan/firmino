@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, externalizeDepsPlugin } from "electron-vite"
 
-const resolve = { alias: { "@src": fileURLToPath(new URL("src", import.meta.url)) } }
+const resolve = { alias: { "@src": fileURLToPath(new URL("src", import.meta.url)), "@resources": fileURLToPath(new URL("resources", import.meta.url)) } }
 
 // Main and preload bundle their dependencies, so the packaged app ships no node_modules.
 const bundled = externalizeDepsPlugin({ exclude: ["zod", "@orpc/client"] })

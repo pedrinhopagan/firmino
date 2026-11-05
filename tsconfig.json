@@ -11,7 +11,8 @@
     "types": ["bun", "node", "vite/client"],
     "allowImportingTsExtensions": false,
     "paths": {
-      "@src/*": ["./src/*"]
+      "@src/*": ["./src/*"],
+      "@resources/*": ["./resources/*"]
     }
   },
   "include": ["src", "bench", "electron.vite.config.ts"]

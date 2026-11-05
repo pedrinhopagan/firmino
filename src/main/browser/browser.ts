@@ -16,6 +16,7 @@ const httpUrl = /^https?:\/\//
 interface BrowserOptions {
   reply: (reply: BrowserReply) => void
   onHandoff: (reason: string) => void
+  onShownChange: (shown: boolean) => void
   /** The Zen account the user chose in Conexões, read from the Engine before each import. */
   zenIdentity: () => Promise<number | undefined>
 }
@@ -49,6 +50,7 @@ export class Browser {
   private importingZen?: Promise<void>
   private window?: BrowserWindow
   private hiddenHost?: BaseWindow
+  private pageShown = false
 
   constructor(private readonly options: BrowserOptions) {
     const handle = (name: string, action: (raw: unknown) => unknown) => {
@@ -71,6 +73,10 @@ export class Browser {
       this.bounds = parse(browserBounds, raw)
       this.place()
     })
+  }
+
+  get shown() {
+    return this.pageShown
   }
 
   attach(window: BrowserWindow) {
@@ -366,6 +372,13 @@ export class Browser {
   }
 
   private publish() {
+    const shown = this.page?.control === "user"
+
+    if (shown !== this.pageShown) {
+      this.pageShown = shown
+      this.options.onShownChange(shown)
+    }
+
     this.window?.webContents.send("browser:state", this.state())
   }
 }

@@ -20,8 +20,7 @@ const stateLabels: Record<WhatsappStatus["state"], string> = {
 export function Connections({ client }: { client: EngineClient }) {
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-[560px] flex-col gap-4 px-6 pt-16 pb-8">
-        <h1 className="m-0 mb-2 text-title font-semibold">Conexões</h1>
+      <div className="mx-auto flex w-full max-w-[560px] flex-col gap-3 px-4 pt-4 pb-6">
         <WhatsappConnection client={client} />
         <GoogleConnection client={client} />
         <ZenConnection client={client} />

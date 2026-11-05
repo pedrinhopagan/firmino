@@ -8,6 +8,7 @@ import { resolveAppProfile } from "@src/shared/app-profile"
 import type { engineContract } from "@src/shared/engine-contract"
 import { Browser } from "./browser/browser"
 import { EngineProcess } from "./engine-process"
+import { compactSize, WindowPlacement, wideSize } from "./window-placement"
 
 const appProfile = resolveAppProfile(app.isPackaged)
 
@@ -37,35 +38,64 @@ if (!app.requestSingleInstanceLock()) {
 let mainWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 const notifications = new Set<Notification>()
+const placement = new WindowPlacement()
+const placing = app.whenReady().then(() => placement.start({ resourceClass: appProfile.desktopName, directory: app.getPath("userData") })).catch((error: unknown) => {
+  console.warn("KWin placement not loaded; the compositor places the window.", error instanceof Error ? error.message : error)
+})
+let creating: Promise<void> | undefined
 
 function showWindow(window: BrowserWindow) {
   // Wayland ignores restore() and focus() on a minimized or covered window; unmapping and mapping it again brings it to the front.
   window.hide()
   window.show()
+  placement.place(window)
   window.focus()
 }
 
+function toggleWindow() {
+  if (mainWindow?.isVisible() && mainWindow.isFocused()) {
+    mainWindow.hide()
+
+    return
+  }
+
+  reopenWindow()
+}
+
 async function openWindow() {
+  if (creating) {
+    return creating
+  }
+
   if (mainWindow) {
     showWindow(mainWindow)
 
     return
   }
 
-  await createWindow().catch((error: unknown) => {
+  creating = createWindow().finally(() => {
+    creating = undefined
+  })
+  await creating
+}
+
+/** Opens the window from an event that cannot wait on it; startup awaits openWindow itself so a failed load still stops the app. */
+function reopenWindow() {
+  openWindow().catch((error: unknown) => {
     console.error(error)
   })
 }
 
 async function createWindow() {
+  await placing
   const window = new BrowserWindow({
     title: appProfile.name,
-    width: 960,
-    height: 760,
+    ...(browser.shown ? wideSize : compactSize),
     frame: false,
+    transparent: true,
     icon,
     show: false,
-    backgroundColor: "#0b0b0b",
+    backgroundColor: "#00000000",
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -109,7 +139,7 @@ function notify(notice: { title: string; body: string }) {
   notifications.add(notification)
   notification.on("click", () => {
     notifications.delete(notification)
-    void openWindow()
+    reopenWindow()
   })
   notification.on("close", () => notifications.delete(notification))
   notification.on("failed", (_event, error) => {
@@ -119,13 +149,23 @@ function notify(notice: { title: string; body: string }) {
   notification.show()
 }
 
-app.on("second-instance", () => void openWindow())
-app.on("activate", () => void openWindow())
+app.on("second-instance", () => reopenWindow())
+app.on("activate", () => reopenWindow())
+process.on("SIGUSR2", () => {
+  if (app.isReady()) {
+    toggleWindow()
+  }
+})
 
 const icon = join(app.getAppPath(), "resources", appProfile.icon)
 const browser = new Browser({
   reply: (reply) => void engine.send(reply),
   onHandoff: (reason) => notify({ title: "O Kolega precisa de você", body: reason }),
+  onShownChange(shown) {
+    if (mainWindow) {
+      placement.resize(mainWindow, shown ? wideSize : compactSize)
+    }
+  },
   zenIdentity: async () => (await engineClient().zen.identity()).identity,
 })
 const engineName = process.platform === "win32" ? "kolega-engine.exe" : "kolega-engine"
@@ -172,17 +212,6 @@ function senderWindow(event: Electron.IpcMainInvokeEvent) {
 }
 
 ipcMain.handle("window:minimize", (event) => senderWindow(event).minimize())
-ipcMain.handle("window:toggle-maximize", (event) => {
-  const window = senderWindow(event)
-
-  if (window.isMaximized()) {
-    window.unmaximize()
-
-    return
-  }
-
-  window.maximize()
-})
 ipcMain.handle("window:close", (event) => senderWindow(event).close())
 
 void app.whenReady().then(async () => {
@@ -190,19 +219,18 @@ void app.whenReady().then(async () => {
 
   ipcMain.handle("engine:get-connection", () => starting.then(() => engine.connection))
 
-  const loading = createWindow()
-
-  await starting
-  await engine.event({ name: "main.started", attributes: { process: "main", status: "ready", version: app.getVersion() } })
-  tray = new Tray(icon)
-  tray.setToolTip(appProfile.name)
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Abrir o Kolega", click: () => void openWindow() },
-    { type: "separator" },
-    { label: "Sair", click: () => app.quit() },
-  ]))
-  tray.on("click", () => void openWindow())
-  await loading
+  // Both are awaited together so a window that fails to load stops the app even before the Engine is ready.
+  await Promise.all([openWindow(), starting.then(async () => {
+    await engine.event({ name: "main.started", attributes: { process: "main", status: "ready", version: app.getVersion() } })
+    tray = new Tray(icon)
+    tray.setToolTip(appProfile.name)
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "Abrir o Kolega", click: () => reopenWindow() },
+      { type: "separator" },
+      { label: "Sair", click: () => app.quit() },
+    ]))
+    tray.on("click", toggleWindow)
+  })])
 }).catch(async (error: unknown) => {
   console.error(error)
   await engine.stop()
@@ -219,7 +247,7 @@ app.on("before-quit", (event) => {
   event.preventDefault()
   tray?.destroy()
   browser.close()
-  void engine.event({ name: "main.stopped", attributes: { process: "main", status: "stopping" } }).then(() => engine.stop()).then(() => {
+  void placement.stop().catch((error: unknown) => console.warn("KWin placement not unloaded.", error)).then(() => engine.event({ name: "main.stopped", attributes: { process: "main", status: "stopping" } })).then(() => engine.stop()).then(() => {
     engineStopped = true
     app.quit()
   })

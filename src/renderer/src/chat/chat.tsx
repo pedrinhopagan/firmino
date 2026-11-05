@@ -12,12 +12,12 @@ import { chatQueries } from "./chat-queries"
 import { chatStore } from "./chat-store"
 
 const providerNames: Record<ProviderId, string> = { codex: "Codex", claude: "Claude" }
-const columnClassName = "mx-auto w-full max-w-[848px] px-6"
+const columnClassName = "mx-auto w-full max-w-[848px] px-4"
 const pulsingDotDelays = ["", "[animation-delay:150ms]", "[animation-delay:300ms]"]
 
 export function Chat({ client }: { client: EngineClient }) {
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col pb-4">
+    <div className="flex min-h-0 w-full flex-1 flex-col pb-3">
       <Messages client={client} />
       <div className={columnClassName}>
         <Composer client={client} />
@@ -68,13 +68,13 @@ function Messages({ client }: { client: EngineClient }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto" onScroll={(event) => revealNearTop(event.currentTarget)}>
-      <div ref={observeContent} className={`${columnClassName} flex grow flex-col justify-end gap-6 pt-16 pb-6`}>
+      <div ref={observeContent} className={`${columnClassName} flex grow flex-col justify-end gap-5 pt-4 pb-5`}>
         {hidden === 0 && messages.hasNextPage && (
           <Button className="self-center" variant="text" disabled={messages.isFetchingNextPage} onClick={() => void showEarlier()}>
             {messages.isFetchingNextPage ? "Carregando…" : "Mostrar anteriores"}
           </Button>
         )}
-        {empty && <p className="my-auto self-center text-support text-secondary">Peça algo ao Kolega. As Rotinas e os Gatilhos também respondem aqui.</p>}
+        {empty && <p className="my-auto max-w-64 self-center text-center text-support text-secondary">Peça algo ao Kolega. As Rotinas e os Gatilhos também respondem aqui.</p>}
         {cached.slice(hidden).map((message) => <Message key={message.id} message={message} />)}
         <LiveReply />
       </div>
@@ -161,7 +161,7 @@ function Composer({ client }: { client: EngineClient }) {
   return (
     <form className="flex flex-col gap-2" onSubmit={submit}>
       {send.error && <p className="m-0 px-2 text-support text-status-error" role="alert">Não foi possível enviar: {send.error.message}</p>}
-      <div className="flex flex-col gap-1 rounded-[18px] border border-outline-strong bg-surface-raised px-2 pt-2 pb-2 shadow-[0_14px_32px_rgb(0_0_0_/_24%)] focus-within:border-muted">
+      <div className="flex flex-col gap-1 rounded-[18px] border border-outline-strong bg-surface-raised p-2 focus-within:border-muted">
         <textarea className="max-h-40 min-h-11 resize-none bg-transparent px-2 py-2 text-body text-primary outline-none [field-sizing:content] placeholder:text-muted" rows={1} placeholder="Escreva para o Kolega" aria-label="Mensagem" value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} />
         <div className="flex items-center gap-2">
           <ProviderPicker client={client} />

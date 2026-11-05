@@ -5,7 +5,6 @@ import type { EngineConnection } from "./engine-ipc"
 export interface Desktop {
   getEngineConnection: () => Promise<EngineConnection>
   minimizeWindow: () => Promise<void>
-  toggleMaximizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
   getBrowserState: () => Promise<BrowserState | null>
   /** Calls the listener on every change of the agent's page; the returned function stops it. */
