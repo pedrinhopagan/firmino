@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #f5f5f5;
+  --color-secondary: #b8b8b8;
+  --color-muted: #9d9d9d;
+  --color-accent: #e5e5e5;
+  --color-accent-ink: #171717;
+  --color-canvas: #0b0b0b;
+  --color-sidebar: var(--color-canvas);
+  --color-surface: #161616;
+  --color-surface-raised: #202020;
+  --color-surface-hover: #2a2a2a;
+  --color-surface-active: #343434;
+  --color-outline: #303030;
+  --color-outline-strong: #5a5a5a;
+  --color-focus: #d4d4d4;
+  --color-ring: var(--color-focus);
+  --color-status-success: #4ade80;
+  --color-status-warning: #fbbf24;
+  --color-status-error: #f87171;
+  --color-status-working: #fbbf24;
+  --color-status-awaiting-decision: #60a5fa;
+  --color-overlay: rgb(0 0 0 / 72%);
+  --color-inline-code: #d7d7d7;
+  --color-syntax-keyword: #e4a7eb;
+  --color-syntax-string: #b9df8f;
+  --color-syntax-number: #f2b86f;
+  --color-syntax-title: #8dcced;
+  --radius-shell: 1.5rem;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.25;
+  --text-title--letter-spacing: -0.02em;
+  --text-section: 0.9375rem;
+  --text-section--line-height: 1.35;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.65;
+  --text-control: 0.8125rem;
+  --text-control--line-height: 1.4;
+  --text-support: 0.75rem;
+  --text-support--line-height: 1.5;
+  --text-metadata: 0.6875rem;
+  --text-metadata--line-height: 1.4;
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1.4;
+  --text-label--letter-spacing: 0.08em;
+  --animate-rise: rise 250ms ease-out both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  body {
+    overscroll-behavior: none;
+  }
+
+  button,
+  [role="button"],
+  a,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: var(--color-outline-strong);
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-secondary);
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+    -webkit-appearance: none;
+  }
+}

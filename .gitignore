@@ -1,0 +1,13 @@
+node_modules/
+out/
+dist-engine/
+release/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+logs/
+*.log
+.DS_Store
+.env
+.koworker/
+.optmem/

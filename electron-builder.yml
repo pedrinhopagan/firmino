@@ -1,0 +1,20 @@
+appId: com.kolega.app
+productName: Kolega
+directories:
+  output: release
+files:
+  - out/**
+  - resources/icon.png
+  - package.json
+  - "!node_modules/**"
+extraResources:
+  - from: dist-engine
+    to: engine
+npmRebuild: false
+linux:
+  target: AppImage
+  executableName: kolega
+  category: Utility
+  synopsis: Secretário pessoal que fica aberto no seu computador
+  syncDesktopName: true
+  icon: resources/icon.png
