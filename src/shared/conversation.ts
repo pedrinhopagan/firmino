@@ -40,7 +40,13 @@ export const conversationEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("finished"), outcome: turnOutcome, message: conversationMessage.optional(), error: z.string().optional() }),
 ])
 
-const providerModel = z.object({ id: z.string(), label: z.string(), isDefault: z.boolean() })
+const providerModel = z.object({
+  id: z.string(),
+  label: z.string(),
+  isDefault: z.boolean(),
+  /** A newer version of the same family replaces it; the picker folds it away, as T3 Code does. */
+  legacy: z.boolean(),
+})
 
 export const providerStatus = z.object({
   account: providerAccount,
@@ -69,5 +75,6 @@ export type ConversationMessage = z.infer<typeof conversationMessage>
 export type ConversationEvent = z.infer<typeof conversationEvent>
 export type TurnOutcome = z.infer<typeof turnOutcome>
 export type ProviderStatus = z.infer<typeof providerStatus>
+export type ProviderModel = z.infer<typeof providerModel>
 export type ProviderChoice = z.infer<typeof providerChoice>
 export type FavoriteModel = z.infer<typeof favoriteModel>

@@ -3,7 +3,7 @@ import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
 import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
-import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
+import { errorMessage, kolegaInstructions, markLegacy, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const requestTimeoutMs = 20_000
 
@@ -360,7 +360,8 @@ export async function codexStatus(launch: ProviderLaunch) {
       loggedIn: !!account,
       ...(chatgpt?.email ? { email: chatgpt.email } : {}),
       ...(chatgpt?.planType ? { plan: chatgpt.planType } : {}),
-      models: models.map((model) => ({ id: model.model, label: model.displayName, isDefault: model.isDefault })),
+      // Codex names some models GPT-6.1-Sol and others GPT-6.1 Terra; the picker shows them all as T3 Code does, GPT-6.1 Sol.
+      models: markLegacy(models.map((model) => ({ id: model.model, label: model.displayName.replace(/(\d)-(?=[A-Z])/, "$1 "), isDefault: model.isDefault }))),
     } satisfies Omit<ProviderStatus, "account">
   } finally {
     server.process.kill()

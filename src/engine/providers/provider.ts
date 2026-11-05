@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import type { TurnOutcome } from "@src/shared/conversation"
+import type { ProviderModel, TurnOutcome } from "@src/shared/conversation"
 import type { KolegaMcpConnection } from "../kolega-mcp"
 
 export interface TurnResult {
@@ -67,4 +67,33 @@ export function errorMessage(error: unknown) {
   }
 
   return String(error)
+}
+
+const versionPattern = /\d+(?:[.-]\d+)*/
+
+function version(id: string) {
+  return (versionPattern.exec(id)?.[0] ?? "").split(/[.-]/).map(Number)
+}
+
+function newer(a: number[], b: number[]) {
+  const index = a.findIndex((part, at) => part !== (b[at] ?? 0))
+
+  if (index === -1) {
+    return false
+  }
+
+  return (a[index] ?? 0) > (b[index] ?? 0)
+}
+
+/**
+ * Marks each model that a newer one of its family replaces: claude-opus-5 under claude-opus-5-5, gpt-6-sol under gpt-6.1-sol.
+ * ponytail: the family is the id without its version, so a renamed family stays current until the CLI drops it.
+ */
+export function markLegacy(models: Omit<ProviderModel, "legacy">[]): ProviderModel[] {
+  const family = (id: string) => id.replace(versionPattern, "#")
+
+  return models.map((model) => ({
+    ...model,
+    legacy: models.some((other) => family(other.id) === family(model.id) && newer(version(other.id), version(model.id))),
+  }))
 }

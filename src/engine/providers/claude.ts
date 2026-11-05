@@ -2,7 +2,7 @@ import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthro
 import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
 import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
-import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
+import { errorMessage, kolegaInstructions, markLegacy, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const statusTimeoutMs = 10_000
 const loginUrlTimeoutMs = 20_000
@@ -288,11 +288,11 @@ async function claudeModels(launch: ProviderLaunch) {
     const rows = await models.supportedModels()
     const standard = rows.find((row) => row.value === "default")?.resolvedModel
 
-    return rows.filter((row) => row.value !== "default").map((row) => {
+    return markLegacy(rows.filter((row) => row.value !== "default").map((row) => {
       const id = row.resolvedModel ?? row.value
 
       return { id, label: row.displayName, isDefault: id === standard }
-    })
+    }))
   } finally {
     models.close()
   }

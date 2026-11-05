@@ -1,9 +1,9 @@
-import { ArrowPathIcon, CheckIcon, ChevronDownIcon, MagnifyingGlassIcon, StarIcon as SolidStarIcon } from "@heroicons/react/16/solid"
+import { ArrowPathIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, StarIcon as SolidStarIcon } from "@heroicons/react/16/solid"
 import { StarIcon } from "@heroicons/react/24/outline"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
 import { type KeyboardEvent, type ReactNode, type ToggleEvent, useId, useRef, useState } from "react"
-import type { FavoriteModel, ProviderChoice, ProviderId, ProviderStatus } from "@src/shared/conversation"
+import type { FavoriteModel, ProviderChoice, ProviderId, ProviderModel, ProviderStatus } from "@src/shared/conversation"
 import type { EngineClient } from "../engine-client"
 import { IconButton } from "../ui/icon-button"
 import { Tooltip, useTooltip } from "../ui/tooltip"
@@ -81,6 +81,7 @@ export function ProviderPicker({ client }: { client: EngineClient }) {
   const chosen = statuses.data?.find((known) => known.account.id === choice.account)
   const chosenModel = chosen?.models.find((model) => (choice.model ? model.id === choice.model : model.isDefault))
   const disabled = running || choose.isPending
+  const modelLabel = chosenModel?.label ?? choice.model
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -90,10 +91,10 @@ export function ProviderPicker({ client }: { client: EngineClient }) {
         style={{ anchorName }}
         popoverTarget={id}
         disabled={disabled}
-        aria-label={`Modelo: ${chosen?.account.name ?? "conta"}, ${chosenModel?.label ?? "padrão"}`}
+        aria-label={`Modelo: ${chosen?.account.name ?? "conta"}, ${modelLabel ?? "padrão"}`}
       >
         {chosen && <ProviderIcon provider={chosen.account.provider} className="size-4 shrink-0" />}
-        <span className="truncate">{chosenModel?.label ?? chosen?.account.name}</span>
+        <span className="truncate">{modelLabel ?? chosen?.account.name}</span>
         <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
       </button>
       <ProviderMenu client={client} id={id} anchorName={anchorName} choice={choice} disabled={disabled} onPick={(next) => choose.mutate(next)} />
@@ -110,9 +111,8 @@ const maxListRem = 21.625
 /** An account id, or "favorites"; account ids carry their provider, so none is "favorites". */
 type Tab = string
 
-interface ModelRow extends FavoriteModel {
+interface ModelRow extends FavoriteModel, Pick<ProviderModel, "label" | "legacy"> {
   provider: ProviderId
-  label: string
   favorite: boolean
 }
 
@@ -146,6 +146,7 @@ function modelRows(statuses: ProviderStatus[], starred: FavoriteModel[]) {
     provider: account.provider,
     model: model.id,
     label: model.label,
+    legacy: model.legacy,
     favorite: starred.some((favorite) => favorite.account === account.id && favorite.model === model.id),
   })))
 }
@@ -165,7 +166,20 @@ function visibleRows(rows: ModelRow[], starred: FavoriteModel[], tab: Tab, searc
   return rows.filter((row) => row.account === tab).toSorted((a, b) => Number(b.favorite) - Number(a.favorite))
 }
 
-function emptyLabel(status: ProviderStatus | undefined, tab: Tab, search: string) {
+/** The rows an account tab shows before its older models open: the folded ones count as their one toggle. */
+function tabLength(rows: ModelRow[], folded: (row: ModelRow) => boolean) {
+  const hidden = rows.filter(folded).length
+
+  return rows.length - hidden + Math.min(hidden, 1)
+}
+
+function emptyLabel(statuses: ProviderStatus[] | undefined, tab: Tab, search: string) {
+  const status = statuses?.find((known) => known.account.id === tab)
+
+  if (!statuses) {
+    return "Carregando modelos…"
+  }
+
   if (search.trim()) {
     return "Nenhum modelo encontrado."
   }
@@ -214,6 +228,10 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
   const favorites = useQuery(chatQueries.favorites(client))
   const [tab, setTab] = useState<Tab>(choice.account)
   const [search, setSearch] = useState("")
+  const [showOlder, setShowOlder] = useState(false)
+  const searching = search.trim() !== ""
+  /** Favoritos and a search list models of every account, each marked with its provider. */
+  const crossAccount = tab === "favorites" || searching
   const popover = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const toggleFavorite = useMutation({
@@ -225,20 +243,46 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
   const accountNames = new Map(enabled.map(({ account }) => [account.id, account.name]))
   const rows = modelRows(enabled, starred)
   const visible = visibleRows(rows, starred, tab, search, accountNames)
-  const longestTab = Math.max(1, starred.length, ...enabled.map(({ account }) => rows.filter((row) => row.account === account.id).length))
   const selectedModel = choice.model ?? enabled.find((known) => known.account.id === choice.account)?.models.find((model) => model.isDefault)?.id
+  const isChosen = (row: ModelRow) => row.account === choice.account && row.model === selectedModel
+  /** A favorite or the chosen model stays in view even when a newer one replaced it. */
+  const folded = (row: ModelRow) => row.legacy && !row.favorite && !isChosen(row)
+  const older = crossAccount ? [] : visible.filter(folded)
+  const listed = visible.filter((row) => !older.includes(row))
+  const longestTab = Math.max(1, starred.length, ...enabled.map(({ account }) => tabLength(rows.filter((row) => row.account === account.id), folded)))
+
+  const option = (row: ModelRow) => (
+    <ModelOption
+      key={`${row.account}:${row.model}`}
+      row={row}
+      accountName={accountNames.get(row.account) ?? row.account}
+      showAccount={crossAccount}
+      checked={isChosen(row)}
+      starOnHover={tab === "favorites" && !searching}
+      disabled={disabled}
+      onPick={() => pick(row)}
+      onToggleFavorite={() => toggleFavorite.mutate({ account: row.account, model: row.model })}
+    />
+  )
 
   function pick(row: ModelRow) {
     popover.current?.hidePopover()
     onPick({ account: row.account, model: row.model })
   }
 
+  function showTab(next: Tab) {
+    setTab(next)
+    setShowOlder(false)
+  }
+
+  // The tooltips inside are popovers too, and React lets their toggle events bubble up to here.
   function handleToggle(event: ToggleEvent<HTMLDivElement>) {
-    if (event.newState !== "open") {
+    if (event.target !== event.currentTarget || event.newState !== "open") {
       return
     }
 
     setSearch("")
+    setShowOlder(false)
     setTab(starred.length > 0 ? "favorites" : choice.account)
     searchRef.current?.focus()
   }
@@ -266,12 +310,12 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
     >
       <div className="flex max-h-86.5 w-80 max-w-[calc(100vw-2rem)]" style={{ minHeight: `min(calc(${listChromeRem + longestTab * rowRem}rem + 1px), ${maxListRem}rem)` }}>
         <div className="flex w-11 shrink-0 flex-col gap-1 overflow-y-auto bg-muted/30 p-1" role="group" aria-label="Conta">
-          <RailButton label="Favoritos" pressed={tab === "favorites"} onPick={() => setTab("favorites")}>
+          <RailButton label="Favoritos" pressed={tab === "favorites"} onPick={() => showTab("favorites")}>
             <SolidStarIcon className="size-5" aria-hidden="true" />
           </RailButton>
           <div className="shrink-0 border-b border-border/70" aria-hidden="true" />
           {enabled.map((status) => (
-            <RailButton key={status.account.id} label={`${status.account.name} · ${statusLabel(status)}`} pressed={tab === status.account.id} onPick={() => setTab(status.account.id)}>
+            <RailButton key={status.account.id} label={`${status.account.name} · ${statusLabel(status)}`} pressed={tab === status.account.id} onPick={() => showTab(status.account.id)}>
               <ProviderIcon provider={status.account.provider} className={`size-5 ${isReady(status) ? "" : "opacity-50"}`} />
             </RailButton>
           ))}
@@ -285,20 +329,15 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
             </IconButton>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1" role="menu" aria-label="Modelos">
-            {visible.length === 0 && <p className="m-0 px-2 py-3 text-xs text-muted-foreground">{statuses.data ? emptyLabel(enabled.find((known) => known.account.id === tab), tab, search) : "Carregando modelos…"}</p>}
-            {visible.map((row) => (
-              <ModelOption
-                key={`${row.account}:${row.model}`}
-                row={row}
-                accountName={accountNames.get(row.account) ?? row.account}
-                showAccount={tab === "favorites" || !!search.trim()}
-                checked={row.account === choice.account && row.model === selectedModel}
-                starOnHover={tab === "favorites" && !search.trim()}
-                disabled={disabled}
-                onPick={() => pick(row)}
-                onToggleFavorite={() => toggleFavorite.mutate({ account: row.account, model: row.model })}
-              />
-            ))}
+            {visible.length === 0 && <p className="m-0 px-2 py-3 text-xs text-muted-foreground">{emptyLabel(statuses.data, tab, search)}</p>}
+            {listed.map(option)}
+            {older.length > 0 && (
+              <button type="button" className="flex h-7 w-full items-center gap-1.5 rounded-sm px-2 text-left text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent" aria-expanded={showOlder} onClick={() => setShowOlder(!showOlder)}>
+                <ChevronRightIcon className={`size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${showOlder ? "rotate-90" : ""}`} aria-hidden="true" />
+                Modelos antigos ({older.length})
+              </button>
+            )}
+            {showOlder && older.map(option)}
           </div>
         </div>
       </div>
