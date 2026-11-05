@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { once } from "node:events"
 import { setTimeout as sleep } from "node:timers/promises"
+import { browserCancel, type BrowserReply, browserRequest, type BrowserRequest } from "@src/shared/browser"
 import { type EngineConnection, engineOpenConsentMessage, engineReadyMessage, type ForwardedObservation, type ForwardedObservationEvent } from "@src/shared/engine-ipc"
 import { parse } from "@src/shared/parse"
 import { inheritedEnvironment } from "./child-environment"
@@ -14,6 +15,8 @@ interface EngineProcessOptions {
   googleClient?: { id: string; secret?: string }
   onUnexpectedExit: (error: Error) => void
   onOpenConsent: (url: string) => void
+  onBrowserRequest: (request: BrowserRequest) => void
+  onBrowserCancel: (id: string) => void
 }
 
 interface ChildExit {
@@ -94,6 +97,22 @@ export class EngineProcess {
 
       if (consent.success) {
         this.options.onOpenConsent(consent.data.url)
+
+        return
+      }
+
+      const request = browserRequest.safeParse(message)
+
+      if (request.success) {
+        this.options.onBrowserRequest(request.data)
+
+        return
+      }
+
+      const cancel = browserCancel.safeParse(message)
+
+      if (cancel.success) {
+        this.options.onBrowserCancel(cancel.data.id)
       }
     })
     await this.send({
@@ -126,7 +145,7 @@ export class EngineProcess {
     return this.send({ type: "observation", ...input })
   }
 
-  private send(message: ForwardedObservation) {
+  send(message: ForwardedObservation | BrowserReply) {
     const child = this.child
 
     if (!child?.connected) {
@@ -136,7 +155,7 @@ export class EngineProcess {
     return new Promise<void>((resolve) => {
       child.send(message, (error) => {
         if (error) {
-          process.stderr.write(`Main observation forwarding failed: ${error.message}\n`)
+          process.stderr.write(`Main message to the Engine failed: ${error.message}\n`)
         }
 
         resolve()

@@ -84,7 +84,7 @@ export function createEngineServer({ token, handler, mcp }: {
   return Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    async fetch(request) {
+    async fetch(request, server) {
       const origin = request.headers.get("origin")
 
       if (origin && !allowed(origin)) {
@@ -102,6 +102,9 @@ export function createEngineServer({ token, handler, mcp }: {
         if (!mcpAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 })
         }
+
+        // A tool call answers only when it ends, and a browser handoff waits minutes for the user; Bun would drop it after 10 s idle.
+        server.timeout(request, 0)
 
         return await mcp.handle(request)
       }

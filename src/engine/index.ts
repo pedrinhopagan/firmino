@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { z } from "zod"
 import { forwardedObservation } from "@src/shared/engine-ipc"
 import { parse } from "@src/shared/parse"
+import { Browser } from "./browser"
 import { Conversation } from "./conversation"
 import { openDatabase } from "./database"
 import { createEngineRouter } from "./engine-router"
@@ -65,17 +66,19 @@ const conversation = new Conversation(database, observability, {
 const routines = new Routines(database, conversation, observability)
 // Read when a tool changes a Gatilho, after Google below exists.
 const triggers = new Triggers(database, conversation, observability, () => google.watchMail())
+const browser = new Browser(observability, triggers)
 const whatsapp = new Whatsapp(database, observability, triggers)
 const google = new Google(database, observability, triggers, (url) => process.send?.({ type: "open-consent", url }), environment.KOLEGA_GOOGLE_CLIENT_ID ? { id: environment.KOLEGA_GOOGLE_CLIENT_ID, ...(environment.KOLEGA_GOOGLE_CLIENT_SECRET ? { secret: environment.KOLEGA_GOOGLE_CLIENT_SECRET } : {}) } : undefined)
 // The router is built before the server listens: built after, it costs about 3 ms more of boot.
 const server = createEngineServer({
   token: environment.KOLEGA_ENGINE_TOKEN,
-  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, conversation, whatsapp, google })),
+  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, conversation, browser, whatsapp, google })),
   mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => {
     routines.registerTools(mcp)
     triggers.registerTools(mcp)
     whatsapp.registerTools(mcp)
     google.registerTools(mcp)
+    browser.registerTools(mcp)
   }) },
 })
 

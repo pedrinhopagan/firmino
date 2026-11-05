@@ -2,7 +2,7 @@ import type { Subprocess } from "bun"
 import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
-import { kolegaMcpTokenVariable } from "../kolega-mcp"
+import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
 import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const requestTimeoutMs = 20_000
@@ -238,7 +238,7 @@ export class CodexSession implements ProviderSession {
     void server.exited.then(() => this.lost(server))
 
     // Thread config overrides apply to resumed threads too; Codex reads the bearer token from its own environment.
-    const config = { mcp_servers: { kolega: { url: this.options.mcp.url, bearer_token_env_var: kolegaMcpTokenVariable } } }
+    const config = { mcp_servers: { kolega: { url: this.options.mcp.url, bearer_token_env_var: kolegaMcpTokenVariable, tool_timeout_sec: kolegaToolTimeoutMs / 1000 } } }
     const thread = { ...runtimeMode, sandbox: "danger-full-access", developerInstructions: kolegaInstructions, config }
     const resumed = this.threadId ? await server.request("thread/resume", { ...thread, threadId: this.threadId }).catch(() => undefined) : undefined
     this.threadId = parse(threadResponse, resumed ?? await server.request("thread/start", thread)).thread.id

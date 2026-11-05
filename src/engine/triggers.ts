@@ -232,6 +232,11 @@ export class Triggers {
     return this.running?.canSend ?? true
   }
 
+  /** Whether a Gatilho's turn is running now, started by a message someone else wrote. */
+  inTurn() {
+    return !!this.running
+  }
+
   close() {
     this.closed = true
 

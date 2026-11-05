@@ -1,5 +1,6 @@
 import { implement, ORPCError } from "@orpc/server"
 import { engineContract } from "@src/shared/engine-contract"
+import type { Browser } from "./browser"
 import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
 import type { ObservationReceiver, Observability } from "./observability"
@@ -25,7 +26,7 @@ async function* surfacedStream<T>(stream: AsyncIterable<T>) {
   }
 }
 
-export function createEngineRouter({ startedAt, observability, receiver, database, conversation, whatsapp, google }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; conversation: Conversation; whatsapp: Whatsapp; google: Google }) {
+export function createEngineRouter({ startedAt, observability, receiver, database, conversation, browser, whatsapp, google }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; conversation: Conversation; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google }) {
   const operations = implement(engineContract).$context<EngineContext>().use(async ({ next, context, path }) => {
     try {
       const operation = path.join(".").toLowerCase()
@@ -49,7 +50,10 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       messages: operations.conversation.messages.handler(({ input }) => database.messages.page(input.before)),
       send: operations.conversation.send.handler(({ input }) => conversation.send(input.text)),
       events: operations.conversation.events.handler(({ signal }) => surfacedStream(conversation.events(signal))),
-      interrupt: operations.conversation.interrupt.handler(() => conversation.interrupt()),
+      interrupt: operations.conversation.interrupt.handler(async () => {
+        browser.interrupt()
+        await conversation.interrupt()
+      }),
     },
     providers: {
       status: operations.providers.status.handler(() => conversation.status()),

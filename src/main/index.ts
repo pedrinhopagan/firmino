@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import { app, BrowserWindow, ipcMain, shell } from "electron"
 import { resolveAppProfile } from "@src/shared/app-profile"
+import { Browser } from "./browser/browser"
 import { EngineProcess } from "./engine-process"
 
 const appProfile = resolveAppProfile(app.isPackaged)
@@ -30,6 +31,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 let mainWindow: BrowserWindow | undefined
+let browser: Browser | undefined
 
 function showMainWindow() {
   if (!mainWindow) {
@@ -58,6 +60,18 @@ const engine = new EngineProcess({
       console.error(error)
     })
   },
+  onBrowserRequest(request) {
+    if (!browser) {
+      void engine.send({ type: "browser-reply", id: request.id, result: "The Kolega window is not open yet. Try again in a moment.", error: true })
+
+      return
+    }
+
+    void browser.execute(request)
+  },
+  onBrowserCancel(id) {
+    browser?.cancel(id)
+  },
   onUnexpectedExit(error) {
     console.error(error)
     app.exit(1)
@@ -84,6 +98,7 @@ void app.whenReady().then(async () => {
     },
   })
   mainWindow = window
+  browser = new Browser(window, (reply) => void engine.send(reply))
   window.once("ready-to-show", showMainWindow)
   window.on("page-title-updated", (event) => event.preventDefault())
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
@@ -113,6 +128,7 @@ app.on("before-quit", (event) => {
   }
 
   event.preventDefault()
+  browser?.close()
   void engine.event({ name: "main.stopped", attributes: { process: "main", status: "stopping" } }).then(() => engine.stop()).then(() => {
     engineStopped = true
     app.quit()

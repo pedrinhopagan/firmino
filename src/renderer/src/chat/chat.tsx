@@ -53,14 +53,14 @@ function ProviderPicker({ client }: { client: EngineClient }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-control">
-      <select className="rounded-lg border border-outline bg-surface px-2 py-1.5" aria-label="Fornecedor" value={choice.provider} disabled={running || choose.isPending} onChange={(event) => choose.mutate({ provider: event.target.value === "claude" ? "claude" : "codex" })}>
+      <select className="min-w-0 max-w-full rounded-lg border border-outline bg-surface px-2 py-1.5" aria-label="Fornecedor" value={choice.provider} disabled={running || choose.isPending} onChange={(event) => choose.mutate({ provider: event.target.value === "claude" ? "claude" : "codex" })}>
         {(["codex", "claude"] as const).map((provider) => {
           const status = statuses.data?.find((known) => known.provider === provider)
 
           return <option key={provider} value={provider}>{providerNames[provider]}{status ? ` (${statusLabel(status)})` : ""}</option>
         })}
       </select>
-      <select className="rounded-lg border border-outline bg-surface px-2 py-1.5" aria-label="Modelo" value={choice.model ?? ""} disabled={running || choose.isPending} onChange={(event) => choose.mutate({ provider: choice.provider, ...(event.target.value ? { model: event.target.value } : {}) })}>
+      <select className="min-w-0 max-w-full rounded-lg border border-outline bg-surface px-2 py-1.5" aria-label="Modelo" value={choice.model ?? ""} disabled={running || choose.isPending} onChange={(event) => choose.mutate({ provider: choice.provider, ...(event.target.value ? { model: event.target.value } : {}) })}>
         <option value="">Modelo padrão</option>
         {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
       </select>

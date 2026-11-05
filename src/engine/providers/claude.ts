@@ -1,7 +1,7 @@
 import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
-import { kolegaMcpTokenVariable } from "../kolega-mcp"
+import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
 import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const statusTimeoutMs = 10_000
@@ -111,7 +111,7 @@ export class ClaudeSession implements ProviderSession {
           includePartialMessages: true,
           systemPrompt: { type: "preset", preset: "claude_code", append: kolegaInstructions },
           // Claude expands the variable itself, so the token stays out of the --mcp-config argument other users can read.
-          env: { ...process.env, [kolegaMcpTokenVariable]: this.options.mcp.token },
+          env: { ...process.env, [kolegaMcpTokenVariable]: this.options.mcp.token, MCP_TOOL_TIMEOUT: String(kolegaToolTimeoutMs) },
           mcpServers: { kolega: { type: "http", url: this.options.mcp.url, headers: { authorization: `Bearer \${${kolegaMcpTokenVariable}}` } } },
           ...(model ? { model } : {}),
           ...(this.sessionId ? { resume: this.sessionId } : {}),

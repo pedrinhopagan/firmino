@@ -8,6 +8,9 @@ export interface KolegaMcpConnection {
   token: string
 }
 
+/** How long a provider waits for one Kolega tool call: a browser handoff waits up to 10 minutes for the user. Both providers default to about 60 s. */
+export const kolegaToolTimeoutMs = 11 * 60_000
+
 /** The variable a provider process reads the bearer token from, so the token stays out of its config and arguments. */
 export const kolegaMcpTokenVariable = "KOLEGA_MCP_TOKEN"
 
