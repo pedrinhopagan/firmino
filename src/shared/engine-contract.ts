@@ -12,6 +12,8 @@ const healthOutput = z.object({
 })
 
 const busy = { TURN_RUNNING: {} }
+/** A Zen container id, 0 for the default identity. */
+const zenIdentity = z.int().min(0)
 
 export const engineContract = {
   health: oc.output(healthOutput).route({ method: "GET", path: "/health" }),
@@ -28,6 +30,11 @@ export const engineContract = {
     status: oc.output(z.array(providerStatus)).route({ method: "GET", path: "/providers/status" }),
     active: oc.output(providerChoice).route({ method: "GET", path: "/providers/active" }),
     choose: oc.errors(busy).input(providerChoice).output(providerChoice).route({ method: "POST", path: "/providers/active" }),
+  },
+  zen: {
+    /** The Zen account the browser imports; absent until the user chooses one. */
+    identity: oc.output(z.object({ identity: zenIdentity.optional() })).route({ method: "GET", path: "/zen/identity" }),
+    choose: oc.input(z.object({ identity: zenIdentity })).route({ method: "POST", path: "/zen/identity" }),
   },
   whatsapp: {
     /** The current status first, then every change. */

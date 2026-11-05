@@ -60,6 +60,18 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       active: operations.providers.active.handler(() => conversation.active()),
       choose: operations.providers.choose.handler(({ input }) => conversation.choose(input)),
     },
+    zen: {
+      identity: operations.zen.identity.handler(() => {
+        const stored = database.state.get("zen.identity")
+
+        if (stored === undefined) {
+          return {}
+        }
+
+        return { identity: Number(stored) }
+      }),
+      choose: operations.zen.choose.handler(({ input }) => database.state.set("zen.identity", String(input.identity))),
+    },
     whatsapp: {
       events: operations.whatsapp.events.handler(({ signal }) => surfacedStream(whatsapp.events(signal))),
       link: operations.whatsapp.link.handler(() => whatsapp.link()),

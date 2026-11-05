@@ -19,6 +19,7 @@ const desktop: Desktop = {
   showBrowser: () => ipcRenderer.invoke("browser:show"),
   returnBrowserControl: () => ipcRenderer.invoke("browser:return-control"),
   setBrowserBounds: (bounds) => ipcRenderer.invoke("browser:bounds", bounds),
+  zenIdentities: () => ipcRenderer.invoke("browser:zen-identities"),
 }
 
 contextBridge.exposeInMainWorld("desktop", desktop)

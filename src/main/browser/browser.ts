@@ -2,7 +2,7 @@ import { BaseWindow, type BrowserWindow, ipcMain, type Session, View, WebContent
 import { type BrowserAction, browserBounds, type BrowserBounds, type BrowserReply, type BrowserRequest, type BrowserState } from "@src/shared/browser"
 import { parse } from "@src/shared/parse"
 import { BrowserDriver } from "./browser-driver"
-import { importZenSession } from "./zen-session"
+import { importZenSession, listZenIdentities } from "./zen-session"
 
 const webPreferences = { partition: "persist:kolega-browser", sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
 const pageSize = { width: 1280, height: 800 }
@@ -12,6 +12,13 @@ const idleMs = 5 * 60_000
 /** How long an action waits for the user to give control back before it answers that the user still has it. */
 const handoffWaitMs = 10 * 60_000
 const httpUrl = /^https?:\/\//
+
+interface BrowserOptions {
+  reply: (reply: BrowserReply) => void
+  onHandoff: (reason: string) => void
+  /** The Zen account the user chose in Conexões, read from the Engine before each import. */
+  zenIdentity: () => Promise<number | undefined>
+}
 
 interface Page {
   view: WebContentsView
@@ -38,11 +45,12 @@ export class Browser {
   private running?: { id: string; controller: AbortController; done: Promise<void> }
   private readonly waiters = new Set<() => void>()
   private idle?: ReturnType<typeof setTimeout>
-  private preparingSession?: Promise<void>
+  private sessionPrepared = false
+  private importingZen?: Promise<void>
   private window?: BrowserWindow
   private hiddenHost?: BaseWindow
 
-  constructor(private readonly reply: (reply: BrowserReply) => void, private readonly onHandoff: (reason: string) => void) {
+  constructor(private readonly options: BrowserOptions) {
     const handle = (name: string, action: (raw: unknown) => unknown) => {
       ipcMain.handle(`browser:${name}`, (event, raw: unknown) => {
         const window = this.window
@@ -58,6 +66,7 @@ export class Browser {
     handle("state", () => this.state())
     handle("show", () => this.show())
     handle("return-control", () => this.returnControl())
+    handle("zen-identities", () => listZenIdentities())
     handle("bounds", (raw) => {
       this.bounds = parse(browserBounds, raw)
       this.place()
@@ -96,9 +105,9 @@ export class Browser {
     clearTimeout(this.idle)
 
     try {
-      this.reply({ type: "browser-reply", id: request.id, result: await this.run(request.input, controller.signal), error: false })
+      this.options.reply({ type: "browser-reply", id: request.id, result: await this.run(request.input, controller.signal), error: false })
     } catch (error) {
-      this.reply({ type: "browser-reply", id: request.id, result: error instanceof Error ? error.message : "The browser action failed.", error: true })
+      this.options.reply({ type: "browser-reply", id: request.id, result: error instanceof Error ? error.message : "The browser action failed.", error: true })
     } finally {
       this.running = undefined
       finish()
@@ -155,7 +164,7 @@ export class Browser {
       page.control = "user"
       page.reason = input.reason
       this.publish()
-      this.onHandoff(input.reason)
+      this.options.onHandoff(input.reason)
       await this.waitForControl(signal)
 
       return "The user gave control back. Take a fresh snapshot before continuing."
@@ -205,20 +214,31 @@ export class Browser {
       }
     })
     this.publish()
-    this.preparingSession ??= this.prepareSession(contents.session)
-    await this.preparingSession
+    this.prepareSession(contents.session)
+    this.importingZen ??= this.importZen(contents.session)
+    await this.importingZen
 
     return page
   }
 
-  /** Once per run: the session refuses permissions and downloads, then takes Zen's cookies, if any. */
-  private async prepareSession(session: Session) {
+  /** Once per run: the session refuses permissions and downloads. */
+  private prepareSession(session: Session) {
+    if (this.sessionPrepared) {
+      return
+    }
+
+    this.sessionPrepared = true
     session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
     session.setPermissionCheckHandler(() => false)
     session.on("will-download", (event) => event.preventDefault())
-    await importZenSession(session.cookies).then(({ imported, skipped }) => {
+  }
+
+  /** Takes Zen's cookies once per run. A failed import, such as one waiting for the user to choose an account, runs again when the next page opens. */
+  private async importZen(session: Session) {
+    await this.options.zenIdentity().then((identity) => importZenSession(session.cookies, identity)).then(({ imported, skipped }) => {
       console.info(`Zen session: ${imported} cookies imported, ${skipped} skipped.`)
     }, (error: unknown) => {
+      this.importingZen = undefined
       console.warn("Zen session not imported; the browser works without it.", error instanceof Error ? error.message : error)
     })
   }

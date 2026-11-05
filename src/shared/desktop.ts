@@ -1,4 +1,4 @@
-import type { BrowserBounds, BrowserState } from "./browser"
+import type { BrowserBounds, BrowserState, ZenIdentity } from "./browser"
 import type { EngineConnection } from "./engine-ipc"
 
 /** What the preload exposes to the Renderer as `window.desktop`. */
@@ -14,4 +14,6 @@ export interface Desktop {
   showBrowser: () => Promise<void>
   returnBrowserControl: () => Promise<void>
   setBrowserBounds: (bounds: BrowserBounds) => Promise<void>
+  /** The Zen accounts on this computer, read from a copy of the profile. */
+  zenIdentities: () => Promise<ZenIdentity[]>
 }

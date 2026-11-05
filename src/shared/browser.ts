@@ -39,6 +39,14 @@ export interface BrowserState {
   reason: string | null
 }
 
+/** One Zen account the browser can take cookies from: the default identity, id 0, or a container. */
+export interface ZenIdentity {
+  id: number
+  name: string
+  /** Live cookies, counted; their values never leave Main. */
+  cookies: number
+}
+
 export type BrowserAction = z.infer<typeof browserAction>
 export type BrowserRequest = z.infer<typeof browserRequest>
 export type BrowserReply = z.infer<typeof browserReply>

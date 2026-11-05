@@ -1,7 +1,11 @@
 import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import { app, BrowserWindow, ipcMain, Menu, Notification, shell, Tray } from "electron"
+import { createORPCClient } from "@orpc/client"
+import { RPCLink } from "@orpc/client/fetch"
+import type { ContractRouterClient } from "@orpc/contract"
 import { resolveAppProfile } from "@src/shared/app-profile"
+import type { engineContract } from "@src/shared/engine-contract"
 import { Browser } from "./browser/browser"
 import { EngineProcess } from "./engine-process"
 
@@ -75,7 +79,16 @@ async function createWindow() {
     mainWindow = undefined
   })
   window.on("page-title-updated", (event) => event.preventDefault())
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
+  // A link in a reply asks for a new window; it opens in the system browser, never inside the app.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^(https?|mailto):/i.test(url)) {
+      shell.openExternal(url).catch((error: unknown) => {
+        console.error(error)
+      })
+    }
+
+    return { action: "deny" }
+  })
   window.webContents.on("will-navigate", (event) => event.preventDefault())
 
   if (process.env.ELECTRON_RENDERER_URL && !app.isPackaged) {
@@ -110,7 +123,11 @@ app.on("second-instance", () => void openWindow())
 app.on("activate", () => void openWindow())
 
 const icon = join(app.getAppPath(), "resources", appProfile.icon)
-const browser = new Browser((reply) => void engine.send(reply), (reason) => notify({ title: "O Kolega precisa de você", body: reason }))
+const browser = new Browser({
+  reply: (reply) => void engine.send(reply),
+  onHandoff: (reason) => notify({ title: "O Kolega precisa de você", body: reason }),
+  zenIdentity: async () => (await engineClient().zen.identity()).identity,
+})
 const engineName = process.platform === "win32" ? "kolega-engine.exe" : "kolega-engine"
 const engine = new EngineProcess({
   executable: app.isPackaged ? join(process.resourcesPath, "engine", engineName) : join(app.getAppPath(), "dist-engine", engineName),
@@ -135,6 +152,16 @@ const engine = new EngineProcess({
     app.exit(1)
   },
 })
+
+let client: ContractRouterClient<typeof engineContract> | undefined
+
+/** Main's own client of the Engine router, for the state the Engine owns and Main needs. */
+function engineClient() {
+  const { url, token } = engine.connection
+  client ??= createORPCClient(new RPCLink({ url, headers: { authorization: `Bearer ${token}` } }))
+
+  return client
+}
 
 function senderWindow(event: Electron.IpcMainInvokeEvent) {
   if (!mainWindow || event.sender !== mainWindow.webContents) {

@@ -6,7 +6,7 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite"
 const resolve = { alias: { "@src": fileURLToPath(new URL("src", import.meta.url)) } }
 
 // Main and preload bundle their dependencies, so the packaged app ships no node_modules.
-const bundled = externalizeDepsPlugin({ exclude: ["zod"] })
+const bundled = externalizeDepsPlugin({ exclude: ["zod", "@orpc/client"] })
 
 export default defineConfig({
   main: { resolve, plugins: [bundled] },

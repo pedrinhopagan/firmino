@@ -1,8 +1,10 @@
 import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises"
 import { homedir, tmpdir } from "node:os"
 import { isAbsolute, join } from "node:path"
+import type { DatabaseSync } from "node:sqlite"
 import type { Cookies } from "electron"
 import { z } from "zod"
+import type { ZenIdentity } from "@src/shared/browser"
 
 const importConcurrency = 16
 const sameSites = { 0: "no_restriction", 1: "lax", 2: "strict", 256: "unspecified" } as const
@@ -83,8 +85,8 @@ async function findProfile() {
   return null
 }
 
-/** Reads the cookies of one Zen identity. A running Zen holds its database locked, so this reads a private copy, with its pending changes, and deletes it. */
-async function readCookieRows(profile: string, now: number) {
+/** Opens a private copy of the profile's cookie database, with its pending changes: a running Zen holds the original locked. Deletes the copy after `read`. */
+async function readCookieDatabase<T>(profile: string, read: (database: DatabaseSync) => T) {
   const copy = await mkdtemp(join(tmpdir(), "kolega-zen-"))
 
   try {
@@ -98,41 +100,63 @@ async function readCookieRows(profile: string, now: number) {
     const database = new DatabaseSync(join(copy, "cookies.sqlite"))
 
     try {
-      // The default identity and each container are one account each; partitioned and private cookies cannot be flattened into a shared session.
-      const identities = z.array(z.object({ originAttributes: z.string() })).parse(database.prepare(
-        "SELECT DISTINCT originAttributes FROM moz_cookies WHERE expiry > ? AND (originAttributes = '' OR (originAttributes GLOB '^userContextId=[0-9]*' AND originAttributes NOT LIKE '%&%'))",
-      ).all(now))
-      const selected = process.env.KOLEGA_ZEN_CONTAINER
-
-      if (!selected && identities.length > 1) {
-        throw new Error("Há várias contas no Zen. Defina KOLEGA_ZEN_CONTAINER com o ID do contêiner desejado (0 para o padrão).")
-      }
-
-      if (selected && !/^\d+$/.test(selected)) {
-        throw new Error("KOLEGA_ZEN_CONTAINER deve ser um ID numérico.")
-      }
-
-      const identity = (() => {
-        if (!selected) {
-          return identities[0]?.originAttributes ?? ""
-        }
-
-        if (Number(selected) === 0) {
-          return ""
-        }
-
-        return `^userContextId=${Number(selected)}`
-      })()
-
-      return database.prepare(
-        "SELECT name, value, host, path, expiry, isSecure, isHttpOnly, sameSite FROM moz_cookies WHERE originAttributes = ? AND expiry > ?",
-      ).all(identity, now)
+      return read(database)
     } finally {
       database.close()
     }
   } finally {
     await rm(copy, { recursive: true, force: true })
   }
+}
+
+const containerNames: Record<string, string> = {
+  "user-context-personal": "Pessoal",
+  "user-context-work": "Trabalho",
+  "user-context-banking": "Banco",
+  "user-context-shopping": "Compras",
+}
+const containersSchema = z.object({
+  identities: z.array(z.object({ userContextId: z.int(), name: z.string().optional(), l10nId: z.string().optional() })),
+})
+
+/** The container names the user sees in Zen, by id; built-in containers carry a translation id instead of a name. */
+async function containerLabels(profile: string) {
+  const contents: unknown = await readFile(join(profile, "containers.json"), "utf8").then(JSON.parse).catch(() => null)
+  const parsed = containersSchema.safeParse(contents)
+  const labels = new Map<number, string>()
+
+  for (const identity of parsed.data?.identities ?? []) {
+    const label = identity.name ?? (identity.l10nId ? containerNames[identity.l10nId] : undefined)
+
+    if (label) {
+      labels.set(identity.userContextId, label)
+    }
+  }
+
+  return labels
+}
+
+// The default identity and each container are one account each; partitioned and private cookies cannot be flattened into a shared session.
+const identityRows = z.array(z.object({ originAttributes: z.string(), cookies: z.int() }).transform((row) => ({ id: row.originAttributes ? Number(row.originAttributes.slice("^userContextId=".length)) : 0, cookies: row.cookies })))
+
+function listIdentities(database: DatabaseSync, now: number) {
+  return identityRows.parse(database.prepare(
+    "SELECT originAttributes, COUNT(*) AS cookies FROM moz_cookies WHERE expiry > ? AND (originAttributes = '' OR (originAttributes GLOB '^userContextId=[0-9]*' AND originAttributes NOT LIKE '%&%')) GROUP BY originAttributes ORDER BY originAttributes",
+  ).all(now))
+}
+
+/** The Zen accounts the import can take, with how many live cookies each has; never their values. Empty without a Zen profile. */
+export async function listZenIdentities() {
+  const profile = await findProfile()
+
+  if (!profile) {
+    return []
+  }
+
+  const identities = await readCookieDatabase(profile, (database) => listIdentities(database, Date.now() / 1000))
+  const labels = await containerLabels(profile)
+
+  return identities.map((identity): ZenIdentity => ({ ...identity, name: identity.id === 0 ? "Padrão" : labels.get(identity.id) ?? `Contêiner ${identity.id}` }))
 }
 
 /** The names a host is under: `a.b.com` gives `b.com` and `com`. */
@@ -165,8 +189,11 @@ function knownSites(domains: string[]) {
   }
 }
 
-/** Imports one Zen identity before any Kolega page navigates. Never writes to Zen. */
-export async function importZenSession(cookies: Pick<Cookies, "get" | "set" | "flushStore">) {
+/**
+ * Imports the chosen Zen identity before any Kolega page navigates; `identity` is a container id, 0 for the default one.
+ * Without a choice it takes the only identity there is, and refuses when there are several. Never writes to Zen.
+ */
+export async function importZenSession(cookies: Pick<Cookies, "get" | "set" | "flushStore">, identity?: number) {
   const profile = await findProfile()
 
   if (!profile) {
@@ -174,7 +201,18 @@ export async function importZenSession(cookies: Pick<Cookies, "get" | "set" | "f
   }
 
   const now = Date.now() / 1000
-  const rows = await readCookieRows(profile, now)
+  const rows = await readCookieDatabase(profile, (database) => {
+    const identities = listIdentities(database, now)
+    const chosen = identity ?? (identities.length === 1 ? identities[0]?.id : undefined)
+
+    if (chosen === undefined) {
+      throw new Error("Há várias contas no Zen. Escolha uma em Conexões.")
+    }
+
+    return database.prepare(
+      "SELECT name, value, host, path, expiry, isSecure, isHttpOnly, sameSite FROM moz_cookies WHERE originAttributes = ? AND expiry > ?",
+    ).all(chosen === 0 ? "" : `^userContextId=${chosen}`, now)
+  })
   const known = knownSites((await cookies.get({})).flatMap((cookie) => cookie.domain ? [cookie.domain.replace(/^\./, "")] : []))
   let imported = 0
   let skipped = 0
