@@ -110,6 +110,10 @@ export class ClaudeSession implements ProviderSession {
           allowDangerouslySkipPermissions: true,
           includePartialMessages: true,
           systemPrompt: { type: "preset", preset: "claude_code", append: kolegaInstructions },
+          settingSources: [],
+          strictMcpConfig: true,
+          skills: [],
+          settings: { autoMemoryEnabled: false },
           // Claude expands the variable itself, so the token stays out of the --mcp-config argument other users can read.
           env: { ...process.env, [kolegaMcpTokenVariable]: this.options.mcp.token, MCP_TOOL_TIMEOUT: String(kolegaToolTimeoutMs) },
           mcpServers: { kolega: { type: "http", url: this.options.mcp.url, headers: { authorization: `Bearer \${${kolegaMcpTokenVariable}}` } } },

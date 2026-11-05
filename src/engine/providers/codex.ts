@@ -42,6 +42,18 @@ const accountResponse = z.object({
 const modelList = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean(), isDefault: z.boolean() })) })
 /** Codex wraps API failures as a JSON document inside the error message. */
 const nestedApiError = z.object({ error: z.object({ message: z.string() }) })
+const userMcpServersOff = z.object({ config: z.object({ mcp_servers: z.record(z.string(), z.unknown()).optional() }) })
+  .transform(({ config }) => Object.fromEntries(Object.keys(config.mcp_servers ?? {}).map((name) => [name, { enabled: false }])))
+
+const userSetupOffFlags = Object.entries({
+  "features.apps": false,
+  "features.plugins": false,
+  "features.hooks": false,
+  "features.memories": false,
+  notify: [],
+  "skills.include_instructions": false,
+  project_doc_max_bytes: 0,
+}).flatMap(([key, value]) => ["-c", `${key}=${JSON.stringify(value)}`])
 
 const runtimeMode = { cwd: kolegaWorkingDirectory, approvalPolicy: "never" } as const
 
@@ -57,7 +69,7 @@ class CodexAppServer {
 
   static async start(executable: string, session?: { mcpToken: string; onNotification: (method: string, params: unknown) => void }) {
     const env = { ...process.env, ...(session ? { [kolegaMcpTokenVariable]: session.mcpToken } : {}) }
-    const server = new CodexAppServer(Bun.spawn([executable, "app-server"], { cwd: kolegaWorkingDirectory, env, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), session?.onNotification)
+    const server = new CodexAppServer(Bun.spawn([executable, "app-server", ...userSetupOffFlags], { cwd: kolegaWorkingDirectory, env, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), session?.onNotification)
 
     await server.request("initialize", { clientInfo: { name: "kolega", title: "Kolega", version: "0.1.0" }, capabilities: { experimentalApi: true } }).catch((error: unknown) => {
       server.process.kill()
@@ -237,8 +249,18 @@ export class CodexSession implements ProviderSession {
     this.live = server
     void server.exited.then(() => this.lost(server))
 
+    return await this.openThread(server).catch((error: unknown) => {
+      this.live = undefined
+      server.process.kill()
+
+      throw error
+    })
+  }
+
+  private async openThread(server: CodexAppServer) {
+    const userServersOff = parse(userMcpServersOff, await server.request("config/read", { cwd: kolegaWorkingDirectory }))
     // Thread config overrides apply to resumed threads too; Codex reads the bearer token from its own environment.
-    const config = { mcp_servers: { kolega: { url: this.options.mcp.url, bearer_token_env_var: kolegaMcpTokenVariable, tool_timeout_sec: kolegaToolTimeoutMs / 1000 } } }
+    const config = { mcp_servers: { ...userServersOff, kolega: { url: this.options.mcp.url, bearer_token_env_var: kolegaMcpTokenVariable, tool_timeout_sec: kolegaToolTimeoutMs / 1000 } } }
     const thread = { ...runtimeMode, sandbox: "danger-full-access", developerInstructions: kolegaInstructions, config }
     const resumed = this.threadId ? await server.request("thread/resume", { ...thread, threadId: this.threadId }).catch(() => undefined) : undefined
     this.threadId = parse(threadResponse, resumed ?? await server.request("thread/start", thread)).thread.id
