@@ -364,7 +364,7 @@ export async function codexStatus(): Promise<ProviderStatus> {
       installed: true,
       loggedIn: !!account,
       ...(email ? { account: email } : {}),
-      models: models.map((model) => ({ id: model.model, label: model.displayName })),
+      models: models.map((model) => ({ id: model.model, label: model.displayName, isDefault: model.isDefault })),
     }
   } finally {
     server.process.kill()

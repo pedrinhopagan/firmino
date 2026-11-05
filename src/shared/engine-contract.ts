@@ -1,6 +1,6 @@
 import { eventIterator, oc } from "@orpc/contract"
 import { z } from "zod"
-import { conversationEvent, conversationMessage, providerChoice, providerStatus } from "./conversation"
+import { conversationEvent, conversationMessage, favoriteModel, providerChoice, providerStatus } from "./conversation"
 import { googleStatus } from "./google"
 import { externalObservationSpan } from "./observation"
 import { whatsappStatus } from "./whatsapp"
@@ -30,6 +30,9 @@ export const engineContract = {
     status: oc.output(z.array(providerStatus)).route({ method: "GET", path: "/providers/status" }),
     active: oc.output(providerChoice).route({ method: "GET", path: "/providers/active" }),
     choose: oc.errors(busy).input(providerChoice).output(providerChoice).route({ method: "POST", path: "/providers/active" }),
+    /** The favorite models, in the order the user starred them. */
+    favorites: oc.output(z.array(favoriteModel)).route({ method: "GET", path: "/providers/favorites" }),
+    toggleFavorite: oc.input(favoriteModel).output(z.array(favoriteModel)).route({ method: "POST", path: "/providers/favorites" }),
   },
   zen: {
     /** The Zen account the browser imports; absent until the user chooses one. */

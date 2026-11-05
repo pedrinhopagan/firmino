@@ -59,6 +59,8 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       status: operations.providers.status.handler(() => conversation.status()),
       active: operations.providers.active.handler(() => conversation.active()),
       choose: operations.providers.choose.handler(({ input }) => conversation.choose(input)),
+      favorites: operations.providers.favorites.handler(() => conversation.favorites()),
+      toggleFavorite: operations.providers.toggleFavorite.handler(({ input }) => conversation.toggleFavorite(input)),
     },
     zen: {
       identity: operations.zen.identity.handler(() => {

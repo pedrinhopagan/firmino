@@ -1,6 +1,8 @@
 import { EventPublisher, ORPCError } from "@orpc/server"
-import type { ConversationEvent, ConversationMessage, ProviderChoice, ProviderId, ProviderStatus, TurnOutcome } from "@src/shared/conversation"
-import { providerId } from "@src/shared/conversation"
+import { z } from "zod"
+import type { ConversationEvent, ConversationMessage, FavoriteModel, ProviderChoice, ProviderId, ProviderStatus, TurnOutcome } from "@src/shared/conversation"
+import { favoriteModel, providerId } from "@src/shared/conversation"
+import { parse } from "@src/shared/parse"
 import type { KolegaDatabase } from "./database"
 import type { KolegaMcpConnection } from "./kolega-mcp"
 import { adoptLoginShellPath } from "./login-shell-path"
@@ -9,6 +11,8 @@ import { ClaudeSession, claudeStatus } from "./providers/claude"
 import { CodexSession, codexStatus } from "./providers/codex"
 import { errorMessage, type ProviderSession, type ProviderSessionOptions, type TurnResult } from "./providers/provider"
 import { localMinute } from "./routines"
+
+const storedFavorites = z.string().transform((value): unknown => JSON.parse(value)).pipe(z.array(favoriteModel))
 
 const speakers = { user: "Usuário", assistant: "Kolega" }
 
@@ -142,6 +146,25 @@ export class Conversation {
     this.database.state.set(`model.${choice.provider}`, choice.model)
 
     return this.active()
+  }
+
+  favorites() {
+    const stored = this.database.state.get("model.favorites")
+
+    if (stored === undefined) {
+      return []
+    }
+
+    return parse(storedFavorites, stored)
+  }
+
+  toggleFavorite(toggled: FavoriteModel) {
+    const current = this.favorites()
+    const kept = current.filter((favorite) => favorite.provider !== toggled.provider || favorite.model !== toggled.model)
+    const favorites = kept.length < current.length ? kept : [...current, toggled]
+    this.database.state.set("model.favorites", JSON.stringify(favorites))
+
+    return favorites
   }
 
   async status() {

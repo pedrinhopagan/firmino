@@ -1,17 +1,17 @@
-import { BoltIcon, ChevronDownIcon, ClockIcon } from "@heroicons/react/16/solid"
+import { BoltIcon, ClockIcon } from "@heroicons/react/16/solid"
 import { ArrowPathIcon } from "@heroicons/react/24/outline"
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
-import { type ComponentProps, type FormEvent, type KeyboardEvent, startTransition, useState } from "react"
-import type { ConversationMessage, ProviderChoice, ProviderId, ProviderStatus } from "@src/shared/conversation"
+import { type FormEvent, type KeyboardEvent, startTransition, useState } from "react"
+import type { ConversationMessage } from "@src/shared/conversation"
 import type { EngineClient } from "../engine-client"
 import { Button } from "../ui/button"
 import { IconButton } from "../ui/icon-button"
 import { ChatContent } from "./chat-content"
+import { ModelPicker, providerNames } from "./chat-model-picker"
 import { chatQueries } from "./chat-queries"
 import { chatStore } from "./chat-store"
 
-const providerNames: Record<ProviderId, string> = { codex: "Codex", claude: "Claude" }
 const columnClassName = "mx-auto w-full max-w-[848px] px-4"
 const pulsingDotDelays = ["", "[animation-delay:150ms]", "[animation-delay:300ms]"]
 
@@ -174,66 +174,16 @@ function Composer({ client }: { client: EngineClient }) {
   )
 }
 
-function statusLabel(status: ProviderStatus) {
-  if (!status.installed) {
-    return "não instalado"
-  }
-
-  if (!status.loggedIn) {
-    return "sem login"
-  }
-
-  return status.account ?? "conectado"
-}
-
-function ChipSelect({ children, ...props }: ComponentProps<"select">) {
-  return (
-    <span className="relative flex min-w-0 items-center">
-      <select {...props} className="min-w-0 max-w-full appearance-none truncate rounded-lg bg-transparent py-1.5 pr-6 pl-2 text-metadata text-secondary transition-colors duration-150 hover:bg-surface-hover hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:text-muted [&>option]:bg-surface-raised [&>option]:text-primary">
-        {children}
-      </select>
-      <ChevronDownIcon className="pointer-events-none absolute right-1.5 size-3.5 text-muted" aria-hidden="true" />
-    </span>
-  )
-}
-
-/** The provider and model that answer, as quiet chips in the prompt's bottom row; both stay disabled while a turn runs. */
+/** The model that answers and a login check, in the prompt's bottom row; the picker stays disabled while a turn runs. */
 function ProviderPicker({ client }: { client: EngineClient }) {
-  const queryClient = useQueryClient()
   const statuses = useQuery(chatQueries.providers(client))
-  const active = useQuery(chatQueries.active(client))
-  const running = useStore(chatStore, (state) => state.reply !== undefined)
-  const choose = useMutation({
-    mutationFn: (choice: ProviderChoice) => client.providers.choose(choice),
-    onSuccess: (choice) => queryClient.setQueryData(chatQueries.active(client).queryKey, choice),
-  })
-
-  if (!active.data) {
-    return <div className="flex-1" />
-  }
-
-  const choice = active.data
-  const current = statuses.data?.find((status) => status.provider === choice.provider)
-  const models = current?.models ?? []
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-0.5">
-      <ChipSelect aria-label="Fornecedor" title={current ? `${providerNames[choice.provider]}: ${statusLabel(current)}` : providerNames[choice.provider]} value={choice.provider} disabled={running || choose.isPending} onChange={(event) => choose.mutate({ provider: event.target.value === "claude" ? "claude" : "codex" })}>
-        {(["codex", "claude"] as const).map((provider) => {
-          const status = statuses.data?.find((known) => known.provider === provider)
-          const ready = status?.installed && status.loggedIn
-
-          return <option key={provider} value={provider}>{providerNames[provider]}{status && !ready ? ` (${statusLabel(status)})` : ""}</option>
-        })}
-      </ChipSelect>
-      <ChipSelect aria-label="Modelo" value={choice.model ?? ""} disabled={running || choose.isPending} onChange={(event) => choose.mutate({ provider: choice.provider, ...(event.target.value ? { model: event.target.value } : {}) })}>
-        <option value="">Modelo padrão</option>
-        {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-      </ChipSelect>
+      <ModelPicker client={client} />
       <IconButton size={28} iconSize={14} label={statuses.isFetching ? "Verificando login…" : "Verificar login"} disabled={statuses.isFetching} onClick={() => void statuses.refetch()}>
         <ArrowPathIcon className={statuses.isFetching ? "animate-spin motion-reduce:animate-none" : ""} aria-hidden="true" />
       </IconButton>
-      {choose.error && <span className="truncate text-metadata text-status-error" role="alert">{choose.error.message}</span>}
     </div>
   )
 }
