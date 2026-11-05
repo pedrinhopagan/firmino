@@ -1,6 +1,6 @@
 import { eventIterator, oc } from "@orpc/contract"
 import { z } from "zod"
-import { conversationEvent, conversationMessage, newProviderAccount, providerAccount, providerChoice, providerLoginEvent, providerStatus } from "./conversation"
+import { conversationEvent, conversationMessage, favoriteModel, newProviderAccount, providerAccount, providerChoice, providerLoginEvent, providerStatus } from "./conversation"
 import { googleStatus } from "./google"
 import { externalObservationSpan } from "./observation"
 import { whatsappStatus } from "./whatsapp"
@@ -39,6 +39,9 @@ export const engineContract = {
     login: oc.input(z.object({ id: z.string() })).output(eventIterator(providerLoginEvent)).route({ method: "POST", path: "/providers/login" }),
     /** The code Claude's sign-in page shows, for the sign-in in progress. */
     loginCode: oc.input(z.object({ id: z.string(), code: z.string().trim().min(1) })).route({ method: "POST", path: "/providers/login/code" }),
+    /** The favorite models, in the order the user starred them. */
+    favorites: oc.output(z.array(favoriteModel)).route({ method: "GET", path: "/providers/favorites" }),
+    toggleFavorite: oc.input(favoriteModel).output(z.array(favoriteModel)).route({ method: "POST", path: "/providers/favorites" }),
   },
   zen: {
     /** The Zen account the browser imports; absent until the user chooses one. */

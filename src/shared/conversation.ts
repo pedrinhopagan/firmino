@@ -40,7 +40,7 @@ export const conversationEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("finished"), outcome: turnOutcome, message: conversationMessage.optional(), error: z.string().optional() }),
 ])
 
-const providerModel = z.object({ id: z.string(), label: z.string() })
+const providerModel = z.object({ id: z.string(), label: z.string(), isDefault: z.boolean() })
 
 export const providerStatus = z.object({
   account: providerAccount,
@@ -59,6 +59,9 @@ export const newProviderAccount = providerAccount.pick({ provider: true, name: t
 /** A sign-in in progress: the page Kolega opened in the browser. */
 export const providerLoginEvent = z.object({ url: z.url() })
 
+/** A starred model of one account. */
+export const favoriteModel = z.object({ account: z.string(), model: z.string() })
+
 export type ProviderId = z.infer<typeof providerId>
 export type ProviderAccount = z.infer<typeof providerAccount>
 export type NewProviderAccount = z.infer<typeof newProviderAccount>
@@ -67,3 +70,4 @@ export type ConversationEvent = z.infer<typeof conversationEvent>
 export type TurnOutcome = z.infer<typeof turnOutcome>
 export type ProviderStatus = z.infer<typeof providerStatus>
 export type ProviderChoice = z.infer<typeof providerChoice>
+export type FavoriteModel = z.infer<typeof favoriteModel>

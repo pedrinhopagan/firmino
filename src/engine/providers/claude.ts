@@ -15,13 +15,6 @@ const streamEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("content_block_delta"), delta: z.object({ type: z.string(), text: z.string().optional() }) }),
 ])
 
-/** Claude Code accepts these aliases and resolves each to the newest model of its family. */
-const claudeModels = [
-  { id: "opus", label: "Opus" },
-  { id: "sonnet", label: "Sonnet" },
-  { id: "haiku", label: "Haiku" },
-]
-
 /** User messages for a Claude query that stays open across turns. */
 class Inbox implements AsyncIterable<SDKUserMessage> {
   private readonly queued: SDKUserMessage[] = []
@@ -230,14 +223,14 @@ export class ClaudeSession implements ProviderSession {
 
 export async function claudeStatus(launch: ProviderLaunch) {
   const child = Bun.spawn([launch.executable, "auth", "status", "--json"], { env: { ...process.env, ...launch.env }, stdout: "pipe", stderr: "ignore", timeout: statusTimeoutMs })
-  const auth = authStatus.parse(JSON.parse(await new Response(child.stdout).text()))
+  const [auth, models] = await Promise.all([new Response(child.stdout).text().then((text) => authStatus.parse(JSON.parse(text))), claudeModels(launch)])
 
   return {
     installed: true,
     loggedIn: auth.loggedIn,
     ...(auth.email ? { email: auth.email } : {}),
     ...(auth.subscriptionType ? { plan: auth.subscriptionType } : {}),
-    models: claudeModels,
+    models,
   } satisfies Omit<ProviderStatus, "account">
 }
 
@@ -284,5 +277,23 @@ export async function claudeLogin(launch: ProviderLaunch): Promise<ProviderLogin
       void child.stdin.flush()
     },
     cancel: () => child.kill(),
+  }
+}
+
+/** The models this Claude Code offers, as its own /model menu lists them, each under the full id its alias resolves to. */
+async function claudeModels(launch: ProviderLaunch) {
+  const models = query({ prompt: new Inbox(), options: { pathToClaudeCodeExecutable: launch.executable, cwd: kolegaWorkingDirectory, env: { ...process.env, ...launch.env }, settingSources: [] } })
+
+  try {
+    const rows = await models.supportedModels()
+    const standard = rows.find((row) => row.value === "default")?.resolvedModel
+
+    return rows.filter((row) => row.value !== "default").map((row) => {
+      const id = row.resolvedModel ?? row.value
+
+      return { id, label: row.displayName, isDefault: id === standard }
+    })
+  } finally {
+    models.close()
   }
 }

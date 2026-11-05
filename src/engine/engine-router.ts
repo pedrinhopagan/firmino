@@ -66,6 +66,8 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       importT3: operations.providers.importT3.handler(() => accounts.importT3()),
       login: operations.providers.login.handler(({ input, signal }) => surfacedStream(accounts.login(input.id, signal))),
       loginCode: operations.providers.loginCode.handler(({ input }) => accounts.loginCode(input.id, input.code)),
+      favorites: operations.providers.favorites.handler(() => conversation.favorites()),
+      toggleFavorite: operations.providers.toggleFavorite.handler(({ input }) => conversation.toggleFavorite(input)),
     },
     zen: {
       identity: operations.zen.identity.handler(() => {

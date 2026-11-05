@@ -360,7 +360,7 @@ export async function codexStatus(launch: ProviderLaunch) {
       loggedIn: !!account,
       ...(chatgpt?.email ? { email: chatgpt.email } : {}),
       ...(chatgpt?.planType ? { plan: chatgpt.planType } : {}),
-      models: models.map((model) => ({ id: model.model, label: model.displayName })),
+      models: models.map((model) => ({ id: model.model, label: model.displayName, isDefault: model.isDefault })),
     } satisfies Omit<ProviderStatus, "account">
   } finally {
     server.process.kill()

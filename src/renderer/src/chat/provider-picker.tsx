@@ -1,8 +1,9 @@
-import { ArrowPathIcon, CheckIcon, ChevronDownIcon } from "@heroicons/react/16/solid"
+import { ArrowPathIcon, CheckIcon, ChevronDownIcon, MagnifyingGlassIcon, StarIcon as SolidStarIcon } from "@heroicons/react/16/solid"
+import { StarIcon } from "@heroicons/react/24/outline"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
-import { type KeyboardEvent, type ToggleEvent, useId, useRef, useState } from "react"
-import type { ProviderAccount, ProviderChoice, ProviderId, ProviderStatus } from "@src/shared/conversation"
+import { type KeyboardEvent, type ReactNode, type ToggleEvent, useId, useRef, useState } from "react"
+import type { FavoriteModel, ProviderChoice, ProviderId, ProviderStatus } from "@src/shared/conversation"
 import type { EngineClient } from "../engine-client"
 import { IconButton } from "../ui/icon-button"
 import { Tooltip, useTooltip } from "../ui/tooltip"
@@ -58,7 +59,6 @@ function moveFocus(event: KeyboardEvent<HTMLElement>) {
   items.at(next % items.length)?.focus()
 }
 
-const rowClassName = "flex min-h-7 w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs font-medium text-foreground outline-none hover:bg-accent focus-visible:bg-accent disabled:pointer-events-none disabled:opacity-64"
 
 /** The provider and model that answer, as T3 Code's model picker: a quiet trigger in the composer that opens the menu above it. Both stay disabled while a turn runs. */
 export function ProviderPicker({ client }: { client: EngineClient }) {
@@ -79,7 +79,7 @@ export function ProviderPicker({ client }: { client: EngineClient }) {
 
   const choice = active.data
   const chosen = statuses.data?.find((known) => known.account.id === choice.account)
-  const chosenModel = chosen?.models.find((model) => model.id === choice.model)
+  const chosenModel = chosen?.models.find((model) => (choice.model ? model.id === choice.model : model.isDefault))
   const disabled = running || choose.isPending
 
   return (
@@ -102,8 +102,22 @@ export function ProviderPicker({ client }: { client: EngineClient }) {
   )
 }
 
-/** One button of the account rail; the tooltip names the account, since two accounts of a provider share its mark. */
-function AccountButton({ account, pressed, onPick }: { account: ProviderAccount; pressed: boolean; onPick: () => void }) {
+/** The list keeps the height of the longest tab, up to the menu's 86.5 spacing units, and scrolls past it. */
+const listChromeRem = 3
+const rowRem = 1.75
+const maxListRem = 21.625
+
+/** An account id, or "favorites"; account ids carry their provider, so none is "favorites". */
+type Tab = string
+
+interface ModelRow extends FavoriteModel {
+  provider: ProviderId
+  label: string
+  favorite: boolean
+}
+
+/** One button of the rail; the tooltip names the account, since two accounts of a provider share its mark. */
+function RailButton({ label, pressed, onPick, children }: { label: string; pressed: boolean; onPick: () => void; children: ReactNode }) {
   const tooltip = useTooltip()
 
   return (
@@ -111,39 +125,133 @@ function AccountButton({ account, pressed, onPick }: { account: ProviderAccount;
       <button
         type="button"
         {...tooltip.anchorProps}
-        className="grid aspect-square w-full place-items-center rounded-md outline-none transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 aria-pressed:bg-background aria-pressed:shadow-xs"
+        className="grid aspect-square w-full shrink-0 place-items-center rounded-md outline-none transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 aria-pressed:bg-background aria-pressed:shadow-xs"
         aria-pressed={pressed}
-        aria-label={account.name}
+        aria-label={label}
         onClick={onPick}
       >
-        <ProviderIcon provider={account.provider} className="size-5" />
+        {children}
       </button>
-      <Tooltip {...tooltip.popoverProps} placement="right">{account.name}</Tooltip>
+      <Tooltip {...tooltip.popoverProps} placement="right">{label}</Tooltip>
     </>
   )
 }
 
-/** Accounts on the left, the models of the one in view on the right. The view goes back to the chosen account each time the menu closes. */
-function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { client: EngineClient; id: string; anchorName: string; choice: ProviderChoice; disabled: boolean; onPick: (choice: ProviderChoice) => void }) {
-  const statuses = useQuery(chatQueries.providers(client))
-  const [browsing, setBrowsing] = useState<string>()
-  const popover = useRef<HTMLDivElement>(null)
-  const shown = browsing ?? choice.account
-  const enabled = statuses.data?.filter((known) => known.account.enabled) ?? []
-  const status = enabled.find((known) => known.account.id === shown)
+const isReady = (status: ProviderStatus) => status.installed && status.loggedIn
 
-  function pick(model?: string) {
+/** Every model of the enabled accounts that are signed in, each marked when starred. */
+function modelRows(statuses: ProviderStatus[], starred: FavoriteModel[]) {
+  return statuses.filter(isReady).flatMap(({ account, models }) => models.map((model): ModelRow => ({
+    account: account.id,
+    provider: account.provider,
+    model: model.id,
+    label: model.label,
+    favorite: starred.some((favorite) => favorite.account === account.id && favorite.model === model.id),
+  })))
+}
+
+/** A search looks across every account; otherwise Favoritos shows the starred models in starring order, and an account tab puts its favorites first. */
+function visibleRows(rows: ModelRow[], starred: FavoriteModel[], tab: Tab, search: string, accountNames: Map<string, string>) {
+  const term = search.trim().toLowerCase()
+
+  if (term) {
+    return rows.filter((row) => `${row.label} ${row.model} ${accountNames.get(row.account) ?? ""}`.toLowerCase().includes(term))
+  }
+
+  if (tab === "favorites") {
+    return starred.flatMap((favorite) => rows.filter((row) => row.account === favorite.account && row.model === favorite.model))
+  }
+
+  return rows.filter((row) => row.account === tab).toSorted((a, b) => Number(b.favorite) - Number(a.favorite))
+}
+
+function emptyLabel(status: ProviderStatus | undefined, tab: Tab, search: string) {
+  if (search.trim()) {
+    return "Nenhum modelo encontrado."
+  }
+
+  if (tab === "favorites") {
+    return "Nenhum favorito ainda."
+  }
+
+  if (status && !isReady(status)) {
+    return `${status.account.name}: ${statusLabel(status)}.`
+  }
+
+  return "Nenhum modelo encontrado."
+}
+
+function ModelOption({ row, accountName, showAccount, checked, starOnHover, disabled, onPick, onToggleFavorite }: {
+  row: ModelRow
+  accountName: string
+  showAccount: boolean
+  checked: boolean
+  starOnHover: boolean
+  disabled: boolean
+  onPick: () => void
+  onToggleFavorite: () => void
+}) {
+  const starHidden = !row.favorite || starOnHover
+
+  return (
+    <div className="group flex h-7 items-center gap-0.5 rounded-sm pr-1 hover:bg-accent has-focus-visible:bg-accent">
+      <button type="button" role="menuitemradio" aria-checked={checked} className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left text-xs font-medium text-foreground outline-none disabled:pointer-events-none disabled:opacity-64" disabled={disabled} onClick={onPick}>
+        {showAccount && <ProviderIcon provider={row.provider} className="size-3.5 shrink-0" />}
+        <span className="min-w-0 truncate">{row.label}<span className="sr-only">, {accountName}</span></span>
+      </button>
+      <button type="button" className={`grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring ${starHidden ? "opacity-0 group-hover:opacity-100" : ""}`} aria-pressed={row.favorite} aria-label={`${row.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}: ${row.label}, ${accountName}`} onClick={onToggleFavorite}>
+        <StarIcon className={`size-3 ${row.favorite ? "fill-current text-amber-400" : ""}`} aria-hidden="true" />
+      </button>
+      <CheckIcon className={`size-3.5 shrink-0 ${checked ? "" : "invisible"}`} aria-hidden="true" />
+    </div>
+  )
+}
+
+/** Favoritos and the accounts on the left; a search and the models of the tab in view on the right. Each time the menu opens it shows Favoritos when there are any, else the chosen account. */
+function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { client: EngineClient; id: string; anchorName: string; choice: ProviderChoice; disabled: boolean; onPick: (choice: ProviderChoice) => void }) {
+  const queryClient = useQueryClient()
+  const statuses = useQuery(chatQueries.providers(client))
+  const favorites = useQuery(chatQueries.favorites(client))
+  const [tab, setTab] = useState<Tab>(choice.account)
+  const [search, setSearch] = useState("")
+  const popover = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const toggleFavorite = useMutation({
+    mutationFn: (favorite: FavoriteModel) => client.providers.toggleFavorite(favorite),
+    onSuccess: (saved) => queryClient.setQueryData(chatQueries.favorites(client).queryKey, saved),
+  })
+  const enabled = statuses.data?.filter((known) => known.account.enabled) ?? []
+  const starred = favorites.data ?? []
+  const accountNames = new Map(enabled.map(({ account }) => [account.id, account.name]))
+  const rows = modelRows(enabled, starred)
+  const visible = visibleRows(rows, starred, tab, search, accountNames)
+  const longestTab = Math.max(1, starred.length, ...enabled.map(({ account }) => rows.filter((row) => row.account === account.id).length))
+  const selectedModel = choice.model ?? enabled.find((known) => known.account.id === choice.account)?.models.find((model) => model.isDefault)?.id
+
+  function pick(row: ModelRow) {
     popover.current?.hidePopover()
-    onPick({ account: shown, ...(model ? { model } : {}) })
+    onPick({ account: row.account, model: row.model })
   }
 
   function handleToggle(event: ToggleEvent<HTMLDivElement>) {
-    if (event.newState === "closed") {
-      setBrowsing(undefined)
+    if (event.newState !== "open") {
       return
     }
 
-    event.currentTarget.querySelector<HTMLButtonElement>("[aria-checked=true]")?.focus()
+    setSearch("")
+    setTab(starred.length > 0 ? "favorites" : choice.account)
+    searchRef.current?.focus()
+  }
+
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    const first = visible.at(0)
+
+    if (event.key !== "Enter" || event.nativeEvent.isComposing || !first || disabled) {
+      return
+    }
+
+    event.preventDefault()
+    pick(first)
   }
 
   return (
@@ -156,31 +264,41 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
       onToggle={handleToggle}
       onKeyDown={moveFocus}
     >
-      <div className="flex max-h-86.5 w-80 max-w-[calc(100vw-2rem)]">
+      <div className="flex max-h-86.5 w-80 max-w-[calc(100vw-2rem)]" style={{ minHeight: `min(calc(${listChromeRem + longestTab * rowRem}rem + 1px), ${maxListRem}rem)` }}>
         <div className="flex w-11 shrink-0 flex-col gap-1 overflow-y-auto bg-muted/30 p-1" role="group" aria-label="Conta">
-          {enabled.map(({ account }) => <AccountButton key={account.id} account={account} pressed={account.id === shown} onPick={() => setBrowsing(account.id)} />)}
+          <RailButton label="Favoritos" pressed={tab === "favorites"} onPick={() => setTab("favorites")}>
+            <SolidStarIcon className="size-5" aria-hidden="true" />
+          </RailButton>
+          <div className="shrink-0 border-b border-border/70" aria-hidden="true" />
+          {enabled.map((status) => (
+            <RailButton key={status.account.id} label={`${status.account.name} · ${statusLabel(status)}`} pressed={tab === status.account.id} onPick={() => setTab(status.account.id)}>
+              <ProviderIcon provider={status.account.provider} className={`size-5 ${isReady(status) ? "" : "opacity-50"}`} />
+            </RailButton>
+          ))}
         </div>
         <div className="flex min-w-0 flex-1 flex-col border-l border-border/70 bg-muted/40">
           <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/70 pr-1.5 pl-3">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-xs font-medium">{status?.account.name}</span>
-              {status && <span className="truncate text-2xs text-muted-foreground">{statusLabel(status)}</span>}
-            </div>
+            <MagnifyingGlassIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <input ref={searchRef} className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-placeholder [&::-webkit-search-cancel-button]:hidden" type="search" autoComplete="off" placeholder="Buscar modelos…" aria-label="Buscar modelos" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={handleSearchKeyDown} />
             <IconButton label={statuses.isFetching ? "Verificando login…" : "Verificar login"} disabled={statuses.isFetching} onClick={() => void statuses.refetch()}>
               <ArrowPathIcon className={statuses.isFetching ? "animate-spin motion-reduce:animate-none" : ""} aria-hidden="true" />
             </IconButton>
           </div>
-          <div className="min-h-0 overflow-y-auto p-1" role="menu" aria-label={`Modelos de ${status?.account.name ?? "conta"}`}>
-            {[{ id: undefined, label: "Modelo padrão" }, ...(status?.models ?? [])].map((model) => {
-              const checked = choice.account === shown && choice.model === model.id
-
-              return (
-                <button key={model.id ?? ""} type="button" role="menuitemradio" aria-checked={checked} className={rowClassName} disabled={disabled} onClick={() => pick(model.id)}>
-                  <span className="min-w-0 flex-1 truncate">{model.label}</span>
-                  {checked && <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />}
-                </button>
-              )
-            })}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1" role="menu" aria-label="Modelos">
+            {visible.length === 0 && <p className="m-0 px-2 py-3 text-xs text-muted-foreground">{statuses.data ? emptyLabel(enabled.find((known) => known.account.id === tab), tab, search) : "Carregando modelos…"}</p>}
+            {visible.map((row) => (
+              <ModelOption
+                key={`${row.account}:${row.model}`}
+                row={row}
+                accountName={accountNames.get(row.account) ?? row.account}
+                showAccount={tab === "favorites" || !!search.trim()}
+                checked={row.account === choice.account && row.model === selectedModel}
+                starOnHover={tab === "favorites" && !search.trim()}
+                disabled={disabled}
+                onPick={() => pick(row)}
+                onToggleFavorite={() => toggleFavorite.mutate({ account: row.account, model: row.model })}
+              />
+            ))}
           </div>
         </div>
       </div>
