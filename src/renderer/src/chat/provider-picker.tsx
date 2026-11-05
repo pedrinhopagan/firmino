@@ -54,7 +54,7 @@ function moveFocus(event: KeyboardEvent<HTMLElement>) {
   }
 
   event.preventDefault()
-  const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]:not(:disabled)")]
+  const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role^=menuitem]:not(:disabled)")]
   const next = items.findIndex((item) => item === document.activeElement) + step
   items.at(next % items.length)?.focus()
 }
@@ -166,6 +166,15 @@ function visibleRows(rows: ModelRow[], starred: FavoriteModel[], tab: Tab, searc
   return rows.filter((row) => row.account === tab).toSorted((a, b) => Number(b.favorite) - Number(a.favorite))
 }
 
+/** Splits an account tab into the rows it lists and the older ones it folds; Favoritos and a search fold nothing. */
+function foldOlder(visible: ModelRow[], folded: (row: ModelRow) => boolean, crossAccount: boolean) {
+  if (crossAccount) {
+    return { listed: visible, older: [] }
+  }
+
+  return { listed: visible.filter((row) => !folded(row)), older: visible.filter(folded) }
+}
+
 /** The rows an account tab shows before its older models open: the folded ones count as their one toggle. */
 function tabLength(rows: ModelRow[], folded: (row: ModelRow) => boolean) {
   const hidden = rows.filter(folded).length
@@ -247,8 +256,7 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
   const isChosen = (row: ModelRow) => row.account === choice.account && row.model === selectedModel
   /** A favorite or the chosen model stays in view even when a newer one replaced it. */
   const folded = (row: ModelRow) => row.legacy && !row.favorite && !isChosen(row)
-  const older = crossAccount ? [] : visible.filter(folded)
-  const listed = visible.filter((row) => !older.includes(row))
+  const { listed, older } = foldOlder(visible, folded, crossAccount)
   const longestTab = Math.max(1, starred.length, ...enabled.map(({ account }) => tabLength(rows.filter((row) => row.account === account.id), folded)))
 
   const option = (row: ModelRow) => (
@@ -288,7 +296,7 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
   }
 
   function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    const first = visible.at(0)
+    const first = listed.at(0)
 
     if (event.key !== "Enter" || event.nativeEvent.isComposing || !first || disabled) {
       return
@@ -332,7 +340,7 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
             {visible.length === 0 && <p className="m-0 px-2 py-3 text-xs text-muted-foreground">{emptyLabel(statuses.data, tab, search)}</p>}
             {listed.map(option)}
             {older.length > 0 && (
-              <button type="button" className="flex h-7 w-full items-center gap-1.5 rounded-sm px-2 text-left text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent" aria-expanded={showOlder} onClick={() => setShowOlder(!showOlder)}>
+              <button type="button" role="menuitem" className="flex h-7 w-full items-center gap-1.5 rounded-sm px-2 text-left text-xs text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent" aria-expanded={showOlder} onClick={() => setShowOlder(!showOlder)}>
                 <ChevronRightIcon className={`size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${showOlder ? "rotate-90" : ""}`} aria-hidden="true" />
                 Modelos antigos ({older.length})
               </button>

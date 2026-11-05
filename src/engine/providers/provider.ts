@@ -87,7 +87,7 @@ function newer(a: number[], b: number[]) {
 
 /**
  * Marks each model that a newer one of its family replaces: claude-opus-5 under claude-opus-5-5, gpt-6-sol under gpt-6.1-sol.
- * ponytail: the family is the id without its version, so a renamed family stays current until the CLI drops it.
+ * The family is the id without its version, so a renamed family stays current until the CLI drops it.
  */
 export function markLegacy(models: Omit<ProviderModel, "legacy">[]): ProviderModel[] {
   const family = (id: string) => id.replace(versionPattern, "#")

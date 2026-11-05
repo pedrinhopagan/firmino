@@ -41,7 +41,13 @@ const accountResponse = z.object({
 })
 const loginStarted = z.object({ authUrl: z.url() })
 const loginCompleted = z.object({ success: z.boolean(), error: z.string().nullable().optional() })
-const modelList = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean(), isDefault: z.boolean() })) })
+const modelList = z.object({ data: z.array(z.object({
+  model: z.string(),
+  // Codex names some models GPT-6.1-Sol and others GPT-6.1 Terra; Kolega shows them all as T3 Code does, GPT-6.1 Sol.
+  displayName: z.string().transform((name) => name.replace(/(\d)-(?=[A-Z])/, "$1 ")),
+  hidden: z.boolean(),
+  isDefault: z.boolean(),
+})) })
 /** Codex wraps API failures as a JSON document inside the error message. */
 const nestedApiError = z.object({ error: z.object({ message: z.string() }) })
 const userMcpServersOff = z.object({ config: z.object({ mcp_servers: z.record(z.string(), z.unknown()).optional() }) })
@@ -360,8 +366,7 @@ export async function codexStatus(launch: ProviderLaunch) {
       loggedIn: !!account,
       ...(chatgpt?.email ? { email: chatgpt.email } : {}),
       ...(chatgpt?.planType ? { plan: chatgpt.planType } : {}),
-      // Codex names some models GPT-6.1-Sol and others GPT-6.1 Terra; the picker shows them all as T3 Code does, GPT-6.1 Sol.
-      models: markLegacy(models.map((model) => ({ id: model.model, label: model.displayName.replace(/(\d)-(?=[A-Z])/, "$1 "), isDefault: model.isDefault }))),
+      models: markLegacy(models.map((model) => ({ id: model.model, label: model.displayName, isDefault: model.isDefault }))),
     } satisfies Omit<ProviderStatus, "account">
   } finally {
     server.process.kill()
