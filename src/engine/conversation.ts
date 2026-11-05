@@ -7,26 +7,51 @@ import type { Observability } from "./observability"
 import { ClaudeSession, claudeStatus } from "./providers/claude"
 import { CodexSession, codexStatus } from "./providers/codex"
 import { errorMessage, type ProviderSession, type ProviderSessionOptions, type TurnResult } from "./providers/provider"
-import { localMinute, type Routine } from "./routines"
+import { localMinute } from "./routines"
 
 const speakers = { user: "Usuário", assistant: "Kolega" }
 
-/** How a message reads to the provider: a Rotina's message says which Rotina sent it. */
-function framed(message: Pick<ConversationMessage, "role" | "text" | "routine">) {
+/** A turn Kolega starts on its own: a Rotina's prompt, or a Gatilho's instruction with the messages that fired it. */
+export interface QueuedTurn {
+  text: string
+  routine?: string
+  trigger?: string
+}
+
+type Framed = Pick<ConversationMessage, "role" | "text" | "routine" | "trigger">
+
+function speaker(message: Framed) {
+  if (message.routine) {
+    return "Rotina"
+  }
+
+  if (message.trigger) {
+    return "Gatilho"
+  }
+
+  return speakers[message.role]
+}
+
+/** How a message reads to the provider: a Rotina's or a Gatilho's message says which one sent it. */
+function framed(message: Framed) {
   if (message.routine) {
     return `Rotina "${message.routine}" disparou agora:\n\n${message.text}`
+  }
+
+  if (message.trigger) {
+    return `Gatilho "${message.trigger}" disparou agora; esta mensagem não foi escrita pelo usuário:\n\n${message.text}`
   }
 
   return message.text
 }
 
 /** Hands a provider the turns another provider answered, so switching keeps the context. */
-function withTranscript(unseen: Pick<ConversationMessage, "role" | "text" | "routine">[], text: string) {
+function withTranscript(unseen: Framed[], text: string) {
   if (unseen.length === 0) {
     return text
   }
 
-  const transcript = unseen.map((message) => `${message.routine ? "Rotina" : speakers[message.role]}: ${framed(message)}`).join("\n\n")
+  const transcript = unseen.map((message) => `${speaker(message)}: ${framed(message)}`).join("\n\n")
 
   return `Mensagens anteriores desta conversa, que você ainda não viu:\n\n${transcript}\n\nMensagem atual:\n\n${text}`
 }
@@ -60,21 +85,21 @@ export class Conversation {
   }
 
   /**
-   * Runs a Rotina as a turn once the turn in progress ends; resolves with its outcome, or with nothing when `claim` skips it.
-   * `claim` runs in the same tick the turn starts, so no user message starts in between and the Rotina it returns is current.
+   * Runs a Rotina or Gatilho turn once the turn in progress ends; resolves with its outcome, or with nothing when `claim` skips it.
+   * `claim` runs in the same tick the turn starts, so no user message starts in between and the turn it returns is current.
    */
-  async runRoutine(claim: () => Pick<Routine, "name" | "prompt"> | undefined) {
+  async runQueued(claim: () => QueuedTurn | undefined) {
     while (this.running) {
       await this.idle
     }
 
-    const routine = claim()
+    const turn = claim()
 
-    if (!routine) {
+    if (!turn) {
       return undefined
     }
 
-    return await this.start({ text: routine.prompt, routine: routine.name }).finished
+    return await this.start(turn).finished
   }
 
   async interrupt() {
@@ -148,11 +173,11 @@ export class Conversation {
     return session
   }
 
-  private start(turn: { text: string; routine?: string }) {
+  private start(turn: QueuedTurn) {
     const choice = this.active()
     const session = this.session(choice.provider)
     const unseen = this.database.messages.unseenBy(choice.provider)
-    const message = this.database.messages.insert({ role: "user", text: turn.text, provider: choice.provider, ...(turn.routine ? { routine: turn.routine } : {}) })
+    const message = this.database.messages.insert({ ...turn, role: "user", provider: choice.provider })
     const started: ConversationEvent = { type: "started", message }
     this.running = { session, reply: "", started }
     this.publisher.publish("event", started)

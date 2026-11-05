@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { TurnOutcome } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
+import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
 import type { Observability } from "./observability"
 
@@ -233,11 +234,6 @@ function text(value: string) {
   return { content: [{ type: "text" as const, text: value }] }
 }
 
-/** Runs a Rotina's prompt as a turn of the conversation, once `claim` confirms it; resolves when that turn ends. */
-interface RoutineRunner {
-  runRoutine(claim: () => Pick<Routine, "name" | "prompt"> | undefined): Promise<TurnOutcome | undefined>
-}
-
 /**
  * Kolega's Rotinas: scheduled reminders and tasks the agent manages through its MCP tools.
  * One timer waits for the earliest active Rotina. A run missed while the app was closed happens once on the next start;
@@ -248,7 +244,7 @@ export class Routines {
   private firing?: Promise<void>
   private closed = false
 
-  constructor(private readonly database: KolegaDatabase, private readonly conversation: RoutineRunner, private readonly observability: Observability) {
+  constructor(private readonly database: KolegaDatabase, private readonly conversation: Pick<Conversation, "runQueued">, private readonly observability: Observability) {
     this.schedule()
   }
 
@@ -335,7 +331,11 @@ export class Routines {
   /** Runs every due Rotina in turn order. A repeating one moves to its next time as its turn starts; a one-time one is closed after. */
   private async fire() {
     for (const due of this.database.routines.due(new Date())) {
-      const outcome = await this.conversation.runRoutine(() => this.claim(due)).catch((error: unknown): TurnOutcome => {
+      const outcome = await this.conversation.runQueued(() => {
+        const routine = this.claim(due)
+
+        return routine && { text: routine.prompt, routine: routine.name }
+      }).catch((error: unknown): TurnOutcome => {
         this.observability.event({ name: "routines.runfailed", error })
 
         return "failed"

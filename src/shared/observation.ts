@@ -9,9 +9,11 @@ const trace = z.strictObject({ traceId: id, spanId: id, parentSpanId: id.optiona
 
 export const observationAttributes = z.strictObject({
   code: z.string().optional(),
+  count: z.int().optional(),
   method: z.string().optional(),
   process: z.string().optional(),
   provider: z.string().optional(),
+  reason: z.string().optional(),
   runtime: z.string().optional(),
   status: z.string().optional(),
   version: z.string().optional(),

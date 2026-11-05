@@ -3,6 +3,7 @@ import { engineContract } from "@src/shared/engine-contract"
 import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
 import type { ObservationReceiver, Observability } from "./observability"
+import type { Whatsapp } from "./whatsapp/whatsapp"
 
 export interface EngineContext { traceId?: string; spanId?: string }
 
@@ -23,12 +24,12 @@ async function* surfacedStream<T>(stream: AsyncIterable<T>) {
   }
 }
 
-export function createEngineRouter({ startedAt, observability, receiver, database, conversation }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; conversation: Conversation }) {
+export function createEngineRouter({ startedAt, observability, receiver, database, conversation, whatsapp }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; conversation: Conversation; whatsapp: Whatsapp }) {
   const operations = implement(engineContract).$context<EngineContext>().use(async ({ next, context, path }) => {
     try {
       const operation = path.join(".").toLowerCase()
 
-      if (operation.startsWith("observations.") || operation === "conversation.events") {
+      if (operation.startsWith("observations.") || operation.endsWith(".events")) {
         return await next()
       }
 
@@ -53,6 +54,11 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       status: operations.providers.status.handler(() => conversation.status()),
       active: operations.providers.active.handler(() => conversation.active()),
       choose: operations.providers.choose.handler(({ input }) => conversation.choose(input)),
+    },
+    whatsapp: {
+      events: operations.whatsapp.events.handler(({ signal }) => surfacedStream(whatsapp.events(signal))),
+      link: operations.whatsapp.link.handler(() => whatsapp.link()),
+      unlink: operations.whatsapp.unlink.handler(() => whatsapp.unlink()),
     },
   })
 }

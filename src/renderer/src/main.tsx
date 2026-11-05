@@ -3,6 +3,7 @@ import React from "react"
 import ReactDOM from "react-dom/client"
 import { App } from "./app"
 import { subscribeChatEvents } from "./chat/chat-events"
+import { subscribeWhatsappEvents } from "./connections/whatsapp-events"
 import { createEngineClient } from "./engine-client"
 import "./styles.css"
 
@@ -15,6 +16,7 @@ if (!root) {
 const client = createEngineClient(await window.desktop.getEngineConnection())
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: false } } })
 subscribeChatEvents({ client, queryClient })
+subscribeWhatsappEvents(client)
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>

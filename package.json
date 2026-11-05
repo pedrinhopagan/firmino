@@ -12,7 +12,7 @@
   "scripts": {
     "postinstall": "bun node_modules/electron/install.js",
     "dev": "bun run build:engine && electron-vite dev",
-    "build:engine": "bun build --compile --outfile dist-engine/kolega-engine src/engine/index.ts",
+    "build:engine": "bun build --compile --outfile dist-engine/kolega-engine src/engine/index.ts src/engine/whatsapp/whatsapp-connection.ts",
     "build:electron": "electron-vite build",
     "build": "bun run build:engine && bun run build:electron",
     "package:linux": "bun run build && electron-builder --linux",
@@ -29,6 +29,8 @@
     "@orpc/server": "1.15.0",
     "@tanstack/react-query": "5.102.8",
     "@tanstack/react-store": "0.11.1",
+    "baileys": "7.0.0-rc14",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "zod": "4.6.7"

@@ -9,6 +9,8 @@ export const conversationMessage = z.object({
   provider: providerId,
   /** The name of the Rotina that sent this message; null when the user wrote it or Kolega answered. */
   routine: z.string().nullable(),
+  /** The name of the Gatilho that sent this message; null otherwise. */
+  trigger: z.string().nullable(),
   createdAt: z.string(),
 })
 

@@ -11,6 +11,8 @@ import { createEngineServer } from "./engine-server"
 import { handleKolegaMcp, kolegaMcpPath } from "./kolega-mcp"
 import { createObservationSystem } from "./observability"
 import { Routines } from "./routines"
+import { Triggers } from "./triggers"
+import { Whatsapp } from "./whatsapp/whatsapp"
 
 const environment = parse(z.object({
   KOLEGA_ENGINE_TOKEN: z.string().min(1),
@@ -53,11 +55,17 @@ const conversation = new Conversation(database, observability, {
   },
 })
 const routines = new Routines(database, conversation, observability)
+const triggers = new Triggers(database, conversation, observability)
+const whatsapp = new Whatsapp(database, observability, triggers)
 // The router is built before the server listens: built after, it costs about 3 ms more of boot.
 const server = createEngineServer({
   token: environment.KOLEGA_ENGINE_TOKEN,
-  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, conversation })),
-  mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => routines.registerTools(mcp)) },
+  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, conversation, whatsapp })),
+  mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => {
+    routines.registerTools(mcp)
+    triggers.registerTools(mcp)
+    whatsapp.registerTools(mcp)
+  }) },
 })
 
 receiver.span({
@@ -70,6 +78,12 @@ receiver.span({
   attributes: { process: "engine", runtime: `Bun ${Bun.version}`, status: "ready" },
 })
 process.send?.({ type: "ready", port: server.port })
+// After the ready message, so a linked WhatsApp loads Baileys and opens its socket outside the boot.
+setImmediate(() => {
+  whatsapp.resume().catch((error: unknown) => {
+    observability.event({ name: "whatsapp.resumefailed", error })
+  })
+})
 
 let stopping = false
 
@@ -80,6 +94,8 @@ async function shutdown() {
 
   stopping = true
   routines.close()
+  triggers.close()
+  whatsapp.close()
   conversation.close()
   await observability.span({ name: "engine.shutdown", attributes: { process: "engine", status: "stopped" } }, () => server.stop(true)).catch(() => {
     process.stderr.write("Bun Engine shutdown failed\n")

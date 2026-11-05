@@ -105,11 +105,25 @@ function LiveReply() {
   )
 }
 
-function Message({ message }: { message: ConversationMessage }) {
+function origin(message: ConversationMessage) {
   if (message.routine) {
+    return `Rotina · ${message.routine}`
+  }
+
+  if (message.trigger) {
+    return `Gatilho · ${message.trigger}`
+  }
+
+  return undefined
+}
+
+function Message({ message }: { message: ConversationMessage }) {
+  const source = origin(message)
+
+  if (source) {
     return (
       <div className="flex max-w-[80%] flex-col gap-1 self-end rounded-2xl border border-outline px-4 py-2">
-        <span className="text-metadata text-muted">Rotina · {message.routine}</span>
+        <span className="text-metadata text-muted">{source}</span>
         <p className="whitespace-pre-wrap text-body">{message.text}</p>
       </div>
     )

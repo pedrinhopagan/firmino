@@ -2,9 +2,11 @@ import { Database } from "bun:sqlite"
 import type { ConversationMessage, ProviderId } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
 import { type Routine, storedRoutine } from "./routines"
+import { storedTrigger, type Trigger } from "./triggers"
+import { openWhatsappStore } from "./whatsapp/whatsapp-store"
 
-/** Small persisted values: the active provider, its model and each provider's session to resume. */
-type StateKey = "provider" | `model.${ProviderId}` | `session.${ProviderId}`
+/** Small persisted values: the active provider, its model, each provider's session to resume, and the linked WhatsApp account with its keys. */
+type StateKey = "provider" | `model.${ProviderId}` | `session.${ProviderId}` | "whatsapp.auth" | "whatsapp.account"
 
 const messagePageSize = 50
 const transcriptLimit = 20
@@ -26,6 +28,10 @@ export function openDatabase(path: string) {
     db.run("ALTER TABLE messages ADD COLUMN routine TEXT")
   }
 
+  if (!db.query("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'trigger'").get()) {
+    db.run("ALTER TABLE messages ADD COLUMN trigger TEXT")
+  }
+
   db.run("CREATE INDEX IF NOT EXISTS messages_answers ON messages (provider, role, id)")
   db.run("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
   db.run(`CREATE TABLE IF NOT EXISTS routines (
@@ -38,11 +44,22 @@ export function openDatabase(path: string) {
     created_at TEXT NOT NULL
   )`)
   db.run("CREATE INDEX IF NOT EXISTS routines_due ON routines (status, next_run_at)")
+  db.run(`CREATE TABLE IF NOT EXISTS triggers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    instruction TEXT NOT NULL,
+    source TEXT NOT NULL,
+    targets TEXT NOT NULL,
+    can_send INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'paused')),
+    created_at TEXT NOT NULL
+  )`)
+  db.run("CREATE INDEX IF NOT EXISTS triggers_listening ON triggers (source, status)")
 
-  const columns = "id, role, text, provider, routine, created_at AS createdAt"
+  const columns = "id, role, text, provider, routine, trigger, created_at AS createdAt"
   const pageMessages = db.query<ConversationMessage, { before: number; limit: number }>(`SELECT ${columns} FROM messages WHERE id < $before ORDER BY id DESC LIMIT $limit`)
   const unseenMessages = db.query<ConversationMessage, { provider: ProviderId; limit: number }>(`SELECT ${columns} FROM messages WHERE id > COALESCE((SELECT MAX(id) FROM messages WHERE provider = $provider AND role = 'assistant'), 0) ORDER BY id DESC LIMIT $limit`)
-  const insertMessage = db.query<ConversationMessage, Omit<ConversationMessage, "id">>(`INSERT INTO messages (role, text, provider, routine, created_at) VALUES ($role, $text, $provider, $routine, $createdAt) RETURNING ${columns}`)
+  const insertMessage = db.query<ConversationMessage, Omit<ConversationMessage, "id">>(`INSERT INTO messages (role, text, provider, routine, trigger, created_at) VALUES ($role, $text, $provider, $routine, $trigger, $createdAt) RETURNING ${columns}`)
   const readState = db.query<{ value: string }, { key: StateKey }>("SELECT value FROM state WHERE key = $key")
   const writeState = db.query<null, { key: StateKey; value: string }>("INSERT INTO state (key, value) VALUES ($key, $value) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
   const deleteState = db.query<null, { key: StateKey }>("DELETE FROM state WHERE key = $key")
@@ -55,7 +72,14 @@ export function openDatabase(path: string) {
     ON CONFLICT (id) DO UPDATE SET name = excluded.name, prompt = excluded.prompt, frequency = excluded.frequency, status = excluded.status, next_run_at = excluded.next_run_at`)
   const deleteRoutine = db.query<null, { id: string }>("DELETE FROM routines WHERE id = $id")
   const routines = (rows: unknown[]) => rows.map((row) => parse(storedRoutine, row))
-
+  const triggerColumns = "id, name, instruction, source, targets, can_send AS canSend, status, created_at AS createdAt"
+  const allTriggers = db.query<unknown, []>(`SELECT ${triggerColumns} FROM triggers ORDER BY created_at`)
+  const readTrigger = db.query<unknown, { id: string }>(`SELECT ${triggerColumns} FROM triggers WHERE id = $id`)
+  const saveTrigger = db.query<null, Omit<Trigger, "targets" | "canSend"> & { targets: string; canSend: number }>(`INSERT INTO triggers (id, name, instruction, source, targets, can_send, status, created_at) VALUES ($id, $name, $instruction, $source, $targets, $canSend, $status, $createdAt)
+    ON CONFLICT (id) DO UPDATE SET name = excluded.name, instruction = excluded.instruction, source = excluded.source, targets = excluded.targets, can_send = excluded.can_send, status = excluded.status`)
+  const listeningTriggers = db.query<unknown, { source: string }>(`SELECT ${triggerColumns} FROM triggers WHERE status = 'active' AND source = $source`)
+  const deleteTrigger = db.query<null, { id: string }>("DELETE FROM triggers WHERE id = $id")
+  const triggers = (rows: unknown[]) => rows.map((row) => parse(storedTrigger, row))
   return {
     messages: {
       /** The newest messages older than `before`, oldest first, and the cursor for the page before them. */
@@ -68,8 +92,8 @@ export function openDatabase(path: string) {
       },
       /** The latest messages since the provider's last answer, oldest first: what it has not seen. A turn stopped before delivery leaves no answer, so its context is sent again. */
       unseenBy: (provider: ProviderId) => unseenMessages.all({ provider, limit: transcriptLimit }).toReversed(),
-      insert(message: Pick<ConversationMessage, "role" | "text" | "provider"> & { routine?: string }) {
-        const row = insertMessage.get({ ...message, routine: message.routine ?? null, createdAt: new Date().toISOString() })
+      insert(message: Pick<ConversationMessage, "role" | "text" | "provider"> & { routine?: string; trigger?: string }) {
+        const row = insertMessage.get({ ...message, routine: message.routine ?? null, trigger: message.trigger ?? null, createdAt: new Date().toISOString() })
 
         if (!row) {
           throw new Error("Message insert returned no row")
@@ -100,6 +124,15 @@ export function openDatabase(path: string) {
       save: (routine: Routine) => saveRoutine.run({ ...routine, frequency: JSON.stringify(routine.frequency) }),
       remove: (id: string) => deleteRoutine.run({ id }),
     },
+    triggers: {
+      list: () => triggers(allTriggers.all()),
+      get: (id: string) => triggers(readTrigger.all({ id }))[0],
+      /** Active Gatilhos on one source. */
+      listening: (source: Trigger["source"]) => triggers(listeningTriggers.all({ source })),
+      save: (trigger: Trigger) => saveTrigger.run({ ...trigger, targets: JSON.stringify(trigger.targets), canSend: trigger.canSend ? 1 : 0 }),
+      remove: (id: string) => deleteTrigger.run({ id }),
+    },
+    whatsapp: openWhatsappStore(db),
     close: () => db.close(),
   }
 }

@@ -2,6 +2,7 @@ import { eventIterator, oc } from "@orpc/contract"
 import { z } from "zod"
 import { conversationEvent, conversationMessage, providerChoice, providerStatus } from "./conversation"
 import { externalObservationSpan } from "./observation"
+import { whatsappStatus } from "./whatsapp"
 
 const healthOutput = z.object({
   status: z.literal("ready"),
@@ -26,5 +27,11 @@ export const engineContract = {
     status: oc.output(z.array(providerStatus)).route({ method: "GET", path: "/providers/status" }),
     active: oc.output(providerChoice).route({ method: "GET", path: "/providers/active" }),
     choose: oc.errors(busy).input(providerChoice).output(providerChoice).route({ method: "POST", path: "/providers/active" }),
+  },
+  whatsapp: {
+    /** The current status first, then every change. */
+    events: oc.output(eventIterator(whatsappStatus)).route({ method: "GET", path: "/whatsapp/events" }),
+    link: oc.output(whatsappStatus).route({ method: "POST", path: "/whatsapp/link" }),
+    unlink: oc.route({ method: "POST", path: "/whatsapp/unlink" }),
   },
 }
