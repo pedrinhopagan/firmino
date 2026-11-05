@@ -19,8 +19,12 @@ const stateLabels: Record<WhatsappStatus["state"], string> = {
 export function Connections({ client }: { client: EngineClient }) {
   return (
     <>
-      <WhatsappConnection client={client} />
-      <GoogleConnection client={client} />
+      <SettingsSection title="Serviços">
+        <div className={settingsGroupClassName}>
+          <WhatsappConnection client={client} />
+          <GoogleConnection client={client} />
+        </div>
+      </SettingsSection>
       <ZenConnection client={client} />
     </>
   )
@@ -47,18 +51,16 @@ function WhatsappConnection({ client }: { client: EngineClient }) {
   }
 
   return (
-    <SettingsSection title="WhatsApp">
-      <div className={settingsGroupClassName}>
-        <SettingsRow title="Conta" description={<span role="status">{stateLabels[status.state]}{account(status)}</span>}>
-          {status.state === "unlinked"
-            ? <Button disabled={link.isPending} onClick={() => link.mutate()}>Conectar</Button>
-            : <Button variant="danger" disabled={unlink.isPending} onClick={() => unlink.mutate()}>{status.state === "linking" ? "Cancelar" : "Desconectar"}</Button>}
-        </SettingsRow>
-        {status.state === "unlinked" && status.error && <p className={errorClassName} role="alert">{status.error}</p>}
-        {(link.error ?? unlink.error) && <p className={errorClassName} role="alert">{(link.error ?? unlink.error)?.message}</p>}
-        {status.state === "linking" && <LinkCode code={status.qr} />}
-      </div>
-    </SettingsSection>
+    <div className="flex flex-col">
+      <SettingsRow title="WhatsApp" description={<span role="status">{stateLabels[status.state]}{account(status)}</span>}>
+        {status.state === "unlinked"
+          ? <Button variant="secondary" disabled={link.isPending} onClick={() => link.mutate()}>Conectar</Button>
+          : <Button variant="danger" disabled={unlink.isPending} onClick={() => unlink.mutate()}>{status.state === "linking" ? "Cancelar" : "Desconectar"}</Button>}
+      </SettingsRow>
+      {status.state === "unlinked" && status.error && <p className={errorClassName} role="alert">{status.error}</p>}
+      {(link.error ?? unlink.error) && <p className={errorClassName} role="alert">{(link.error ?? unlink.error)?.message}</p>}
+      {status.state === "linking" && <LinkCode code={status.qr} />}
+    </div>
   )
 }
 
@@ -96,18 +98,16 @@ function GoogleConnection({ client }: { client: EngineClient }) {
   }
 
   return (
-    <SettingsSection title="Google">
-      <div className={settingsGroupClassName}>
-        <SettingsRow title="Gmail e Google Agenda" description={<span role="status">{googleLabels[status.state]}{status.state === "connected" ? ` · ${status.account}` : ""}</span>}>
-          {status.state === "disconnected"
-            ? <Button disabled={connect.isPending} onClick={() => connect.mutate()}>Conectar</Button>
-            : <Button variant="danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>{status.state === "connecting" ? "Cancelar" : "Desconectar"}</Button>}
-        </SettingsRow>
-        {status.state === "connecting" && <p className={noteClassName}>A página de permissão do Google abriu no seu navegador.</p>}
-        {status.state === "disconnected" && status.error && <p className={errorClassName} role="alert">{status.error}</p>}
-        {(connect.error ?? disconnect.error) && <p className={errorClassName} role="alert">{(connect.error ?? disconnect.error)?.message}</p>}
-      </div>
-    </SettingsSection>
+    <div className="flex flex-col">
+      <SettingsRow title="Gmail e Google Agenda" description={<span role="status">{googleLabels[status.state]}{status.state === "connected" ? ` · ${status.account}` : ""}</span>}>
+        {status.state === "disconnected"
+          ? <Button variant="secondary" disabled={connect.isPending} onClick={() => connect.mutate()}>Conectar</Button>
+          : <Button variant="danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>{status.state === "connecting" ? "Cancelar" : "Desconectar"}</Button>}
+      </SettingsRow>
+      {status.state === "connecting" && <p className={noteClassName}>A página de permissão do Google abriu no seu navegador.</p>}
+      {status.state === "disconnected" && status.error && <p className={errorClassName} role="alert">{status.error}</p>}
+      {(connect.error ?? disconnect.error) && <p className={errorClassName} role="alert">{(connect.error ?? disconnect.error)?.message}</p>}
+    </div>
   )
 }
 
@@ -125,25 +125,26 @@ function ZenConnection({ client }: { client: EngineClient }) {
   const current = choose.isPending ? choose.variables : chosen.data?.identity
 
   return (
-    <SettingsSection title="Conta do Zen">
+    <SettingsSection title="Navegador" description="O navegador do Kolega entra nos sites com os cookies da conta do Zen escolhida. Ele lê uma cópia e nunca altera o Zen.">
       <div className={settingsGroupClassName}>
-        <p className={noteClassName}>O navegador do Kolega entra nos sites com os cookies desta conta. Ele lê uma cópia e nunca altera o Zen.</p>
         {identities.isPending && <p className={noteClassName}>Lendo o perfil do Zen…</p>}
         {identities.error && <p className={errorClassName} role="alert">Não foi possível ler o perfil do Zen: {identities.error.message}</p>}
         {identities.data?.length === 0 && <p className={noteClassName}>Nenhuma conta do Zen com cookies neste computador.</p>}
         {!!identities.data?.length && (
-          <fieldset className="m-0 flex flex-col gap-0.5 border-0 p-1">
+          <fieldset className="m-0 flex flex-col border-0 p-0 [&>label+label]:border-t">
             <legend className="sr-only">Conta do Zen</legend>
             {identities.data.map((identity) => (
-              <label key={identity.id} className="flex min-h-8 cursor-pointer items-center justify-between gap-3 rounded-md px-2 text-sm text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground has-checked:bg-accent has-checked:text-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring has-disabled:pointer-events-none">
-                <input className="sr-only" type="radio" name="zen-identity" value={identity.id} checked={current === identity.id} disabled={choose.isPending} onChange={() => choose.mutate(identity.id)} />
-                <span>{identity.name}</span>
-                <span className="text-2xs tabular-nums">{cookieCount.format(identity.cookies)} cookies</span>
+              <label key={identity.id} className="flex h-10 cursor-pointer items-center gap-3 px-3 text-sm text-foreground transition-colors duration-150 hover:bg-accent/50 has-focus-visible:bg-accent has-disabled:pointer-events-none">
+                <input className="peer sr-only" type="radio" name="zen-identity" value={identity.id} checked={current === identity.id} disabled={choose.isPending} onChange={() => choose.mutate(identity.id)} />
+                <span className="grid size-4 shrink-0 place-items-center rounded-full border border-input peer-checked:border-primary peer-checked:[&>span]:visible" aria-hidden="true">
+                  <span className="invisible size-2 rounded-full bg-primary" />
+                </span>
+                <span className="min-w-0 flex-1 truncate">{identity.name}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{cookieCount.format(identity.cookies)} cookies</span>
               </label>
             ))}
           </fieldset>
         )}
-        {!!identities.data?.length && current === undefined && identities.data.length > 1 && <p className={noteClassName}>Escolha uma conta para o navegador entrar nos sites com ela.</p>}
         {choose.isSuccess && <p className={noteClassName} role="status">O Kolega usa esta conta na próxima vez que importar os cookies do Zen.</p>}
         {choose.error && <p className={errorClassName} role="alert">{choose.error.message}</p>}
       </div>

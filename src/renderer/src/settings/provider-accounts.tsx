@@ -31,19 +31,20 @@ export function ProviderAccounts({ client }: { client: EngineClient }) {
   const importT3 = useMutation({ mutationFn: () => client.providers.importT3(), onSuccess: refresh })
 
   return (
-    <SettingsSection title="Contas dos fornecedores">
+    <SettingsSection title="Contas" description="Cada conta usa a própria pasta do Codex ou do Claude. As contas padrão usam a mesma pasta do terminal e do T3 Code, então o login vale nos dois.">
       <div className={settingsGroupClassName}>
-        <p className={noteClassName}>Cada conta usa a pasta dela no Codex ou no Claude. O Kolega usa a mesma pasta que o terminal e o T3 Code, então o login vale nos dois.</p>
         {statuses.isPending && <p className={noteClassName}>Verificando as contas…</p>}
         {statuses.error && <p className={errorClassName} role="alert">{statuses.error.message}</p>}
         {statuses.data?.map((status) => <AccountRow key={status.account.id} client={client} status={status} />)}
         {adding && <AddAccount client={client} onDone={() => setAdding(false)} />}
         {importT3.error && <p className={errorClassName} role="alert">{importT3.error.message}</p>}
-        <div className="flex flex-wrap items-center justify-end gap-2 px-3 py-2.5">
-          <Button variant="ghost" disabled={importT3.isPending || statuses.isFetching} onClick={() => importT3.mutate()}>Importar do T3 Code</Button>
-          {!adding && <Button onClick={() => setAdding(true)}>Adicionar conta</Button>}
-        </div>
       </div>
+      {!adding && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="ghost" disabled={importT3.isPending || statuses.isFetching} onClick={() => importT3.mutate()}>Importar do T3 Code</Button>
+          <Button variant="secondary" onClick={() => setAdding(true)}>Adicionar conta</Button>
+        </div>
+      )}
     </SettingsSection>
   )
 }
@@ -60,24 +61,33 @@ function AccountRow({ client, status }: { client: EngineClient; status: Provider
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-3 px-3 py-2.5">
-        <ProviderIcon provider={account.provider} className="size-5 shrink-0" />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="m-0 truncate text-sm font-medium text-foreground">{account.name}</p>
-          <p className="m-0 truncate text-xs text-muted-foreground" role="status">{statusLabel(status)}</p>
-          <p className="m-0 truncate text-2xs text-muted-foreground" title={account.home}>{homeNames[account.provider]}: {account.home ?? `padrão do ${providerNames[account.provider]}`}</p>
+        <div className={`flex min-w-0 flex-1 items-center gap-3 ${account.enabled ? "" : "opacity-64"}`} title={`${homeNames[account.provider]}: ${account.home ?? `padrão do ${providerNames[account.provider]}`}`}>
+          <ProviderIcon provider={account.provider} className="size-5 shrink-0" />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <p className="m-0 truncate text-sm font-medium text-foreground">{account.name}</p>
+            <p className="m-0 truncate text-xs text-muted-foreground" role="status">{statusLabel(status)}</p>
+          </div>
         </div>
-        {canLogin && !login.running && <Button onClick={login.start}>Entrar</Button>}
-        <Button variant="ghost" disabled={update.isPending} onClick={() => update.mutate(!account.enabled)}>{account.enabled ? "Desativar" : "Ativar"}</Button>
+        {canLogin && !login.running && <Button variant="secondary" onClick={login.start}>Entrar</Button>}
         {!defaultAccountIds.has(account.id) && (
           <IconButton label={`Remover ${account.name}`} disabled={remove.isPending} onClick={() => remove.mutate()}>
             <TrashIcon aria-hidden="true" />
           </IconButton>
         )}
+        <Switch label={`Usar a conta ${account.name}`} checked={account.enabled} disabled={update.isPending} onChange={(enabled) => update.mutate(enabled)} />
       </div>
       {login.running && <LoginInProgress client={client} provider={account.provider} id={account.id} url={login.url} onCancel={login.cancel} />}
       {login.error && <p className={errorClassName} role="alert">{login.error}</p>}
       {error && <p className={errorClassName} role="alert">{error.message}</p>}
     </div>
+  )
+}
+
+function Switch({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <button type="button" role="switch" className="group inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-input p-0.5 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 aria-checked:bg-primary" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)}>
+      <span className="size-4 rounded-full bg-background shadow-xs transition-transform duration-150 group-aria-checked:translate-x-4 motion-reduce:transition-none" aria-hidden="true" />
+    </button>
   )
 }
 

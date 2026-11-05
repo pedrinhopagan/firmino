@@ -8,7 +8,7 @@ import { themes } from "../theme/theme-palettes"
 import { SettingsSection } from "../ui/settings-section"
 import { ProviderAccounts } from "./provider-accounts"
 
-const sections = [{ id: "appearance", label: "Aparência" }, { id: "providers", label: "Provedores" }, { id: "connections", label: "Conexões" }] as const
+const sections = [{ id: "appearance", label: "Aparência" }, { id: "providers", label: "Fornecedores" }, { id: "connections", label: "Conexões" }] as const
 
 /** The settings route: one tab per section, the way T3 Code lists its settings pages. */
 export function Settings({ client }: { client: EngineClient }) {
@@ -60,27 +60,24 @@ function Appearance() {
         </div>
       </SettingsSection>
       <SettingsSection title="Tema">
-        <div className="grid grid-cols-2 gap-2">
+        <fieldset className="m-0 grid grid-cols-2 gap-1.5 border-0 p-0">
+          <legend className="sr-only">Tema</legend>
           {themes.map((candidate) => {
             const { colors } = themeVariant(candidate, appearance)
             const active = candidate.id === theme
 
             return (
-              <button key={candidate.id} type="button" className="flex flex-col gap-2 rounded-lg border bg-card p-1.5 text-left outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-ring aria-pressed:bg-accent/30" aria-pressed={active} onClick={() => setTheme(candidate.id)}>
-                <span className="flex h-16 flex-col justify-between rounded-md border p-1.5" style={{ background: colors.background, borderColor: colors.border }} aria-hidden="true">
-                  <span className="h-2.5 w-3/5 self-end rounded-sm" style={{ background: colors.message }} />
-                  <span className="flex h-4.5 items-center justify-end rounded-sm border px-0.5" style={{ background: colors["surface-raised"], borderColor: colors.border }}>
-                    <span className="size-3 rounded-[3px]" style={{ background: colors.primary }} />
-                  </span>
+              <label key={candidate.id} className="flex h-10 cursor-pointer items-center gap-2.5 rounded-lg border bg-card px-2.5 text-sm text-foreground transition-colors duration-150 hover:bg-accent has-checked:border-ring has-focus-visible:ring-2 has-focus-visible:ring-ring">
+                <input className="sr-only" type="radio" name="theme" value={candidate.id} checked={active} onChange={() => setTheme(candidate.id)} />
+                <span className="grid size-6 shrink-0 place-items-center rounded-md border" style={{ background: colors.background, borderColor: colors.border }} aria-hidden="true">
+                  <span className="size-2.5 rounded-full" style={{ background: colors.primary }} />
                 </span>
-                <span className="flex items-center gap-1 px-0.5 text-xs font-medium text-foreground">
-                  <span className="min-w-0 flex-1 truncate">{candidate.label}</span>
-                  {active && <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />}
-                </span>
-              </button>
+                <span className="min-w-0 flex-1 truncate">{candidate.label}</span>
+                {active && <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />}
+              </label>
             )
           })}
-        </div>
+        </fieldset>
       </SettingsSection>
     </>
   )
