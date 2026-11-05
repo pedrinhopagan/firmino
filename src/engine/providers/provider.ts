@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import type { TurnOutcome } from "@src/shared/conversation"
+import type { ProviderModel, TurnOutcome } from "@src/shared/conversation"
 import type { KolegaMcpConnection } from "../kolega-mcp"
 
 export interface TurnResult {
@@ -20,8 +20,23 @@ export interface ProviderSession {
   close(): void
 }
 
-export interface ProviderSessionOptions {
+/** How to start one account's provider: its binary and the variables that point it at the account's home. */
+export interface ProviderLaunch {
   executable: string
+  env: Record<string, string>
+}
+
+/** A sign-in the provider runs: the page to open, and a promise that settles when it ends. */
+export interface ProviderLogin {
+  url: string
+  done: Promise<void>
+  /** Claude's sign-in page shows a code the user pastes back; Codex finishes on its own. */
+  submitCode?: (code: string) => void
+  cancel: () => void
+}
+
+export interface ProviderSessionOptions {
+  launch: ProviderLaunch
   /** The provider's session id saved from an earlier run. */
   resume?: string
   onSession(id: string | undefined): void
@@ -34,6 +49,9 @@ export const kolegaWorkingDirectory = homedir()
 export const kolegaInstructions = [
   "Você é o Kolega, o secretário pessoal do usuário. Responda sempre em português do Brasil, de forma direta e cordial.",
   "Cada mensagem começa com a data e a hora local do usuário. Use essa hora para entender pedidos como \"daqui a 2 minutos\" ou \"amanhã às 9h\" e não a repita na resposta.",
+  "Você tem uma memória permanente, que continua entre sessões, compactações e trocas de fornecedor. Quando ela mudou desde a sua última leitura, a mensagem traz o documento da memória, da mais antiga para a mais recente. Cada linha #a-b resume as memórias de a até b.",
+  "Registre uma memória com memory_note sempre que aprender algo novo ou acontecer algo que valha guardar: um fato ou uma preferência que o usuário ensinar, algo sobre a vida dele, mesmo indireto, uma tarefa que exigiu esforço real ou um evento de efeito duradouro. Cada memória é uma linha curta. Não registre o que a memória já diz. Quando memory_note ou o documento pedir uma compressão, faça-a com memory_nap antes da próxima ação.",
+  "Para achar uma memória antiga, use memory_recall, que busca palavra por palavra em todas as memórias, ou memory_zoom, que abre uma linha #a-b nas duas metades até as memórias originais. Um subagente nunca usa memory_note nem memory_nap; ao criar um, diga isso a ele.",
   "Para lembretes e tarefas agendadas, use as ferramentas de Rotina do servidor MCP kolega: save_routine cria ou altera, list_routines lista e remove_routine remove. Não use cron, at, sleep nem outros agendadores do sistema.",
   "Uma mensagem que começa com \"Rotina\" e o nome dela foi disparada por uma Rotina, não escrita pelo usuário. Faça o que ela pede e fale com o usuário como se fosse um lembrete seu.",
   "Para o WhatsApp do usuário, use as ferramentas do servidor kolega: whatsapp_chats lista as conversas e dá o chatId de cada uma, whatsapp_read lê mensagens e whatsapp_send envia. Envie uma mensagem só quando o usuário pedir, com o texto e o destinatário que ele indicou.",
@@ -49,4 +67,33 @@ export function errorMessage(error: unknown) {
   }
 
   return String(error)
+}
+
+const versionPattern = /\d+(?:[.-]\d+)*/
+
+function version(id: string) {
+  return (versionPattern.exec(id)?.[0] ?? "").split(/[.-]/).map(Number)
+}
+
+function newer(a: number[], b: number[]) {
+  const index = a.findIndex((part, at) => part !== (b[at] ?? 0))
+
+  if (index === -1) {
+    return false
+  }
+
+  return (a[index] ?? 0) > (b[index] ?? 0)
+}
+
+/**
+ * Marks each model that a newer one of its family replaces: claude-opus-5 under claude-opus-5-5, gpt-6-sol under gpt-6.1-sol.
+ * The family is the id without its version, so a renamed family stays current until the CLI drops it.
+ */
+export function markLegacy(models: Omit<ProviderModel, "legacy">[]): ProviderModel[] {
+  const family = (id: string) => id.replace(versionPattern, "#")
+
+  return models.map((model) => ({
+    ...model,
+    legacy: models.some((other) => family(other.id) === family(model.id) && newer(version(other.id), version(model.id))),
+  }))
 }

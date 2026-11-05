@@ -7,6 +7,7 @@ import { subscribeChatEvents } from "./chat/chat-events"
 import { subscribeGoogleEvents } from "./connections/google-events"
 import { subscribeWhatsappEvents } from "./connections/whatsapp-events"
 import { createEngineClient } from "./engine-client"
+import { startTheme } from "./theme/theme"
 import "./styles.css"
 
 const root = document.getElementById("root")
@@ -14,6 +15,8 @@ const root = document.getElementById("root")
 if (!root) {
   throw new Error("Renderer root is missing")
 }
+
+startTheme()
 
 const client = createEngineClient(await window.desktop.getEngineConnection())
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: false } } })

@@ -3,7 +3,7 @@ import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
 import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
-import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
+import { errorMessage, kolegaInstructions, markLegacy, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const requestTimeoutMs = 20_000
 
@@ -34,12 +34,20 @@ const turnCompleted = z.object({
 })
 const accountResponse = z.object({
   account: z.discriminatedUnion("type", [
-    z.object({ type: z.literal("chatgpt"), email: z.string().nullable() }),
+    z.object({ type: z.literal("chatgpt"), email: z.string().nullable(), planType: z.string().nullable() }),
     z.object({ type: z.literal("apiKey") }),
     z.object({ type: z.literal("amazonBedrock") }),
   ]).nullable(),
 })
-const modelList = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean(), isDefault: z.boolean() })) })
+const loginStarted = z.object({ authUrl: z.url() })
+const loginCompleted = z.object({ success: z.boolean(), error: z.string().nullable().optional() })
+const modelList = z.object({ data: z.array(z.object({
+  model: z.string(),
+  // Codex names some models GPT-6.1-Sol and others GPT-6.1 Terra; Kolega shows them all as T3 Code does, GPT-6.1 Sol.
+  displayName: z.string().transform((name) => name.replace(/(\d)-(?=[A-Z])/, "$1 ")),
+  hidden: z.boolean(),
+  isDefault: z.boolean(),
+})) })
 /** Codex wraps API failures as a JSON document inside the error message. */
 const nestedApiError = z.object({ error: z.object({ message: z.string() }) })
 const userMcpServersOff = z.object({ config: z.object({ mcp_servers: z.record(z.string(), z.unknown()).optional() }) })
@@ -67,9 +75,8 @@ class CodexAppServer {
     this.exited = this.read()
   }
 
-  static async start(executable: string, session?: { mcpToken: string; onNotification: (method: string, params: unknown) => void }) {
-    const env = { ...process.env, ...(session ? { [kolegaMcpTokenVariable]: session.mcpToken } : {}) }
-    const server = new CodexAppServer(Bun.spawn([executable, "app-server", ...userSetupOffFlags], { cwd: kolegaWorkingDirectory, env, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), session?.onNotification)
+  static async start(launch: ProviderLaunch, onNotification?: (method: string, params: unknown) => void) {
+    const server = new CodexAppServer(Bun.spawn([launch.executable, "app-server", ...userSetupOffFlags], { cwd: kolegaWorkingDirectory, env: { ...process.env, ...launch.env }, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), onNotification)
 
     await server.request("initialize", { clientInfo: { name: "kolega", title: "Kolega", version: "0.1.0" }, capabilities: { experimentalApi: true } }).catch((error: unknown) => {
       server.process.kill()
@@ -245,7 +252,8 @@ export class CodexSession implements ProviderSession {
   }
 
   private async open() {
-    const server = await CodexAppServer.start(this.options.executable, { mcpToken: this.options.mcp.token, onNotification: (method, params) => this.handle(method, params) })
+    const { launch, mcp } = this.options
+    const server = await CodexAppServer.start({ ...launch, env: { ...launch.env, [kolegaMcpTokenVariable]: mcp.token } }, (method, params) => this.handle(method, params))
     this.live = server
     void server.exited.then(() => this.lost(server))
 
@@ -344,29 +352,55 @@ export class CodexSession implements ProviderSession {
   }
 }
 
-export async function codexStatus(): Promise<ProviderStatus> {
-  const executable = Bun.which("codex", { PATH: process.env.PATH })
-
-  if (!executable) {
-    return { provider: "codex", installed: false, loggedIn: false, models: [] }
-  }
-
-  const server = await CodexAppServer.start(executable)
+export async function codexStatus(launch: ProviderLaunch) {
+  const server = await CodexAppServer.start(launch)
 
   try {
     const [accountRead, modelsRead] = await Promise.all([server.request("account/read", { refreshToken: false }), server.request("model/list", {})])
     const { account } = parse(accountResponse, accountRead)
     const models = parse(modelList, modelsRead).data.filter((model) => !model.hidden)
-    const email = account?.type === "chatgpt" ? account.email : undefined
+    const chatgpt = account?.type === "chatgpt" ? account : undefined
 
     return {
-      provider: "codex",
       installed: true,
       loggedIn: !!account,
-      ...(email ? { account: email } : {}),
-      models: models.map((model) => ({ id: model.model, label: model.displayName })),
-    }
+      ...(chatgpt?.email ? { email: chatgpt.email } : {}),
+      ...(chatgpt?.planType ? { plan: chatgpt.planType } : {}),
+      models: markLegacy(models.map((model) => ({ id: model.model, label: model.displayName, isDefault: model.isDefault }))),
+    } satisfies Omit<ProviderStatus, "account">
   } finally {
     server.process.kill()
+  }
+}
+
+/** ChatGPT sign-in through Codex's own flow: Codex listens on localhost for the browser's callback and saves auth.json in the account's home. */
+export async function codexLogin(launch: ProviderLaunch): Promise<ProviderLogin> {
+  const completed = Promise.withResolvers<void>()
+  const server = await CodexAppServer.start(launch, (method, params) => {
+    if (method !== "account/login/completed") {
+      return
+    }
+
+    const result = parse(loginCompleted, params)
+
+    if (result.success) {
+      completed.resolve()
+
+      return
+    }
+
+    completed.reject(new Error(result.error ?? "O ChatGPT não concluiu o login."))
+  })
+  void server.exited.then(() => completed.reject(new Error("O Codex fechou antes de concluir o login.")))
+  const started = await server.request("account/login/start", { type: "chatgpt" }).catch((error: unknown) => {
+    server.process.kill()
+
+    throw error
+  })
+
+  return {
+    url: parse(loginStarted, started).authUrl,
+    done: completed.promise.finally(() => server.process.kill()),
+    cancel: () => server.process.kill(),
   }
 }

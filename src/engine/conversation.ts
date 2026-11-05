@@ -1,14 +1,19 @@
 import { EventPublisher, ORPCError } from "@orpc/server"
-import type { ConversationEvent, ConversationMessage, ProviderChoice, ProviderId, ProviderStatus, TurnOutcome } from "@src/shared/conversation"
-import { providerId } from "@src/shared/conversation"
+import { z } from "zod"
+import type { ConversationEvent, ConversationMessage, FavoriteModel, ProviderChoice, TurnOutcome } from "@src/shared/conversation"
+import { favoriteModel } from "@src/shared/conversation"
+import { parse } from "@src/shared/parse"
 import type { KolegaDatabase } from "./database"
 import type { KolegaMcpConnection } from "./kolega-mcp"
-import { adoptLoginShellPath } from "./login-shell-path"
+import type { Memory } from "./memory"
 import type { Observability } from "./observability"
-import { ClaudeSession, claudeStatus } from "./providers/claude"
-import { CodexSession, codexStatus } from "./providers/codex"
+import { ClaudeSession } from "./providers/claude"
+import { CodexSession } from "./providers/codex"
 import { errorMessage, type ProviderSession, type ProviderSessionOptions, type TurnResult } from "./providers/provider"
+import type { ProviderAccounts } from "./providers/provider-accounts"
 import { localMinute } from "./routines"
+
+const storedFavorites = z.string().transform((value): unknown => JSON.parse(value)).pipe(z.array(favoriteModel))
 
 const speakers = { user: "Usuário", assistant: "Kolega" }
 
@@ -66,25 +71,24 @@ function clock(now: Date) {
   return `Agora: ${localMinute(now)}, ${now.toLocaleDateString("pt-BR", { weekday: "long" })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`
 }
 
-const providers = {
-  codex: { status: codexStatus, open: (options: ProviderSessionOptions) => new CodexSession(options) },
-  claude: { status: claudeStatus, open: (options: ProviderSessionOptions) => new ClaudeSession(options) },
+const sessionTypes = {
+  codex: (options: ProviderSessionOptions) => new CodexSession(options),
+  claude: (options: ProviderSessionOptions) => new ClaudeSession(options),
 }
 
-/** The one conversation Kolega keeps: its messages, the provider that answers and the turn in progress. */
+/** The one conversation Kolega keeps: its messages, the provider account that answers and the turn in progress. Each account keeps its own session. */
 export class Conversation {
-  private readonly sessions = new Map<ProviderId, ProviderSession>()
-  private readonly idleTimers = new Map<ProviderId, ReturnType<typeof setTimeout>>()
+  private readonly sessions = new Map<string, ProviderSession>()
+  private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly publisher = new EventPublisher<{ event: ConversationEvent }>({ maxBufferedEvents: Number.POSITIVE_INFINITY })
   private running?: { session: ProviderSession; reply: string; tool?: string; started: ConversationEvent }
   /** Settles when the turn in progress ends. */
   private idle: Promise<TurnOutcome> = Promise.resolve("completed")
-  private loginShellPath?: Promise<void>
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly mcp: KolegaMcpConnection, private readonly providerIdleMs: number, private readonly onQueuedTurnEnd: (end: QueuedTurnEnd) => void) {}
+  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly accounts: ProviderAccounts, private readonly memory: Memory, private readonly mcp: KolegaMcpConnection, private readonly providerIdleMs: number, private readonly onQueuedTurnEnd: (end: QueuedTurnEnd) => void) {}
 
   async send(text: string) {
-    await this.providerPath()
+    await this.accounts.ready()
 
     if (this.running) {
       throw new ORPCError("TURN_RUNNING")
@@ -98,7 +102,7 @@ export class Conversation {
    * `claim` runs in the same tick the turn starts, so no user message starts in between and the turn it returns is current.
    */
   async runQueued(claim: () => QueuedTurn | undefined) {
-    await this.providerPath()
+    await this.accounts.ready()
 
     while (this.running) {
       await this.idle
@@ -126,11 +130,19 @@ export class Conversation {
     yield* live
   }
 
+  /** The chosen account, or the first one on when the chosen one was turned off or removed. */
   active(): ProviderChoice {
-    const provider = providerId.catch("codex").parse(this.database.state.get("provider"))
-    const model = this.database.state.get(`model.${provider}`)
+    const enabled = this.accounts.list().filter((account) => account.enabled)
+    const chosen = this.database.state.get("account")
+    const account = enabled.find((known) => known.id === chosen) ?? enabled[0]
 
-    return { provider, ...(model ? { model } : {}) }
+    if (!account) {
+      throw new ORPCError("PRECONDITION_FAILED", { message: "Nenhuma conta de fornecedor ativa. Ative uma em Configurações." })
+    }
+
+    const model = this.database.state.get(`model.${account.id}`)
+
+    return { account: account.id, ...(model ? { model } : {}) }
   }
 
   choose(choice: ProviderChoice) {
@@ -138,21 +150,31 @@ export class Conversation {
       throw new ORPCError("TURN_RUNNING")
     }
 
-    this.database.state.set("provider", choice.provider)
-    this.database.state.set(`model.${choice.provider}`, choice.model)
+    // Throws for an account that is missing, off, or whose CLI is not installed.
+    this.accounts.launch(choice.account)
+    this.database.state.set("account", choice.account)
+    this.database.state.set(`model.${choice.account}`, choice.model)
 
     return this.active()
   }
 
-  async status() {
-    await this.providerPath()
+  favorites() {
+    const stored = this.database.state.get("favorites")
 
-    return await Promise.all(Object.entries(providers).map(([provider, adapter]) => this.observability.span({ name: "provider.status", attributes: { provider } }, () => adapter.status()).catch((): ProviderStatus => ({
-      provider: providerId.parse(provider),
-      installed: true,
-      loggedIn: false,
-      models: [],
-    }))))
+    if (stored === undefined) {
+      return []
+    }
+
+    return parse(storedFavorites, stored)
+  }
+
+  toggleFavorite(toggled: FavoriteModel) {
+    const current = this.favorites()
+    const kept = current.filter((favorite) => favorite.account !== toggled.account || favorite.model !== toggled.model)
+    const favorites = kept.length < current.length ? kept : [...current, toggled]
+    this.database.state.set("favorites", JSON.stringify(favorites))
+
+    return favorites
   }
 
   close() {
@@ -161,60 +183,51 @@ export class Conversation {
     }
   }
 
-  private async providerPath() {
-    this.loginShellPath ??= this.observability.span({ name: "engine.loginshellpath" }, () => adoptLoginShellPath())
-    await this.loginShellPath
-  }
-
-  private session(provider: ProviderId) {
-    clearTimeout(this.idleTimers.get(provider))
-    const existing = this.sessions.get(provider)
+  private session(accountId: string) {
+    clearTimeout(this.idleTimers.get(accountId))
+    const { account, ...launch } = this.accounts.launch(accountId)
+    const existing = this.sessions.get(accountId)
 
     if (existing) {
-      return existing
+      return { account, session: existing }
     }
 
-    const executable = Bun.which(provider, { PATH: process.env.PATH })
-
-    if (!executable) {
-      throw new ORPCError("PRECONDITION_FAILED", { message: `${provider} is not installed` })
-    }
-
-    const resume = this.database.state.get(`session.${provider}`)
-    const session = providers[provider].open({
-      executable,
+    const resume = this.database.state.get(`session.${accountId}`)
+    const session = sessionTypes[account.provider]({
+      launch,
       ...(resume ? { resume } : {}),
-      onSession: (id) => this.database.state.set(`session.${provider}`, id),
+      onSession: (id) => this.database.state.set(`session.${accountId}`, id),
       mcp: this.mcp,
     })
-    this.sessions.set(provider, session)
+    this.sessions.set(accountId, session)
 
-    return session
+    return { account, session }
   }
 
-  private closeWhenIdle(provider: ProviderId) {
-    this.idleTimers.set(provider, setTimeout(() => {
-      this.idleTimers.delete(provider)
-      this.sessions.get(provider)?.close()
-      this.sessions.delete(provider)
+  private closeWhenIdle(accountId: string, provider: string) {
+    this.idleTimers.set(accountId, setTimeout(() => {
+      this.idleTimers.delete(accountId)
+      this.sessions.get(accountId)?.close()
+      this.sessions.delete(accountId)
       this.observability.event({ name: "provider.idleclosed", attributes: { provider } })
     }, this.providerIdleMs))
   }
 
   private start(turn: QueuedTurn) {
     const choice = this.active()
-    const session = this.session(choice.provider)
-    const unseen = this.database.messages.unseenBy(choice.provider)
-    const message = this.database.messages.insert({ ...turn, role: "user", provider: choice.provider })
+    const { account, session } = this.session(choice.account)
+    const unseen = this.database.messages.unseenBy(account.id)
+    const memory = this.memory.forTurn(this.database.state.get(`session.${account.id}`))
+    const message = this.database.messages.insert({ ...turn, role: "user", provider: account.provider, account: account.id })
     const started: ConversationEvent = { type: "started", message }
     this.running = { session, reply: "", started }
     this.publisher.publish("event", started)
-    this.idle = this.answer({ ...choice, text: `${clock(new Date())}\n\n${withTranscript(unseen, framed(message))}`, session, origin: message })
+    this.idle = this.answer({ ...choice, provider: account.provider, text: [clock(new Date()), memory.document, withTranscript(unseen, framed(message))].filter(Boolean).join("\n\n"), session, memory, origin: message })
 
     return { message, finished: this.idle }
   }
 
-  private async answer(turn: ProviderChoice & { text: string; session: ProviderSession; origin: Pick<ConversationMessage, "routine" | "trigger"> }): Promise<TurnOutcome> {
+  private async answer(turn: ProviderChoice & Pick<ConversationMessage, "provider"> & { text: string; session: ProviderSession; memory: Pick<ReturnType<Memory["forTurn"]>, "read">; origin: Pick<ConversationMessage, "routine" | "trigger"> }): Promise<TurnOutcome> {
     const result = await this.observability.span({ name: "provider.turn", attributes: { provider: turn.provider } }, () => turn.session.turn(turn, {
       delta: (text) => {
         if (this.running) {
@@ -234,8 +247,15 @@ export class Conversation {
     })).catch((error: unknown): TurnResult => ({ outcome: "failed", error: errorMessage(error) }))
     const reply = this.running?.reply.trim()
     this.running = undefined
-    this.closeWhenIdle(turn.provider)
-    const message = reply ? this.database.messages.insert({ role: "assistant", text: reply, provider: turn.provider }) : undefined
+    this.closeWhenIdle(turn.account, turn.provider)
+    const thread = this.database.state.get(`session.${turn.account}`)
+
+    // A failed turn may never have reached the provider, so its session reads the memory again on the next turn.
+    if (thread && result.outcome !== "failed") {
+      turn.memory.read(thread)
+    }
+
+    const message = reply ? this.database.messages.insert({ role: "assistant", text: reply, provider: turn.provider, account: turn.account }) : undefined
 
     this.publisher.publish("event", { type: "finished", outcome: result.outcome, ...(message ? { message } : {}), ...(result.error ? { error: result.error } : {}) })
 

@@ -3,10 +3,10 @@ import { type CSSProperties, type FocusEvent, type ReactNode, type Ref, useId, u
 export type TooltipPlacement = "top" | "right" | "bottom" | "left"
 
 const placementClassNames: Record<TooltipPlacement, string> = {
-  top: "[position-area:top] mb-2 starting:translate-y-0.5",
-  right: "[position-area:right] ml-2 starting:-translate-x-0.5",
-  bottom: "[position-area:bottom] mt-2 starting:-translate-y-0.5",
-  left: "[position-area:left] mr-2 starting:translate-x-0.5",
+  top: "[position-area:top] mb-1 starting:translate-y-0.5",
+  right: "[position-area:right] ml-1 starting:-translate-x-0.5",
+  bottom: "[position-area:bottom] mt-1 starting:-translate-y-0.5",
+  left: "[position-area:left] mr-1 starting:translate-x-0.5",
 }
 
 // Once a tooltip closes, its neighbours open at once for a short while.
@@ -64,7 +64,7 @@ export function useTooltip() {
 export function Tooltip({ anchorName, children, placement = "top", ref }: { anchorName: string; children: ReactNode; placement?: TooltipPlacement; ref: Ref<HTMLDivElement> }) {
   return (
     <div
-      className={`pointer-events-none inset-auto m-0 w-max max-w-[220px] rounded-lg border border-outline bg-surface-active px-2 py-1.5 text-center text-metadata font-medium whitespace-normal text-primary shadow-[0_8px_24px_rgb(0_0_0/24%)] transition-[opacity,transform,display,overlay] transition-discrete duration-120 ease-out [position-try-fallbacks:flip-block,flip-inline] starting:opacity-0 data-instant:transition-none motion-reduce:transition-none ${placementClassNames[placement]}`}
+      className={`pointer-events-none inset-auto m-0 w-max max-w-80 rounded-md border bg-popover px-2 py-1 text-xs leading-snug whitespace-normal text-foreground shadow-md/5 transition-[opacity,transform,display,overlay] transition-discrete duration-120 ease-out [position-try-fallbacks:flip-block,flip-inline] starting:opacity-0 data-instant:transition-none motion-reduce:transition-none ${placementClassNames[placement]}`}
       popover="manual"
       ref={ref}
       role="tooltip"

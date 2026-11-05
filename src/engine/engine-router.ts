@@ -5,6 +5,7 @@ import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
 import type { ObservationReceiver, Observability } from "./observability"
 import type { Google } from "./google/google"
+import type { ProviderAccounts } from "./providers/provider-accounts"
 import type { Whatsapp } from "./whatsapp/whatsapp"
 
 export interface EngineContext { traceId?: string; spanId?: string }
@@ -26,7 +27,7 @@ async function* surfacedStream<T>(stream: AsyncIterable<T>) {
   }
 }
 
-export function createEngineRouter({ startedAt, observability, receiver, database, conversation, browser, whatsapp, google }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; conversation: Conversation; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google }) {
+export function createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; accounts: ProviderAccounts; conversation: Conversation; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google }) {
   const operations = implement(engineContract).$context<EngineContext>().use(async ({ next, context, path }) => {
     try {
       const operation = path.join(".").toLowerCase()
@@ -56,9 +57,17 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       }),
     },
     providers: {
-      status: operations.providers.status.handler(() => conversation.status()),
+      status: operations.providers.status.handler(() => accounts.status()),
       active: operations.providers.active.handler(() => conversation.active()),
       choose: operations.providers.choose.handler(({ input }) => conversation.choose(input)),
+      add: operations.providers.add.handler(({ input }) => accounts.add(input)),
+      update: operations.providers.update.handler(({ input }) => accounts.update(input)),
+      remove: operations.providers.remove.handler(({ input }) => accounts.remove(input.id)),
+      importT3: operations.providers.importT3.handler(() => accounts.importT3()),
+      login: operations.providers.login.handler(({ input, signal }) => surfacedStream(accounts.login(input.id, signal))),
+      loginCode: operations.providers.loginCode.handler(({ input }) => accounts.loginCode(input.id, input.code)),
+      favorites: operations.providers.favorites.handler(() => conversation.favorites()),
+      toggleFavorite: operations.providers.toggleFavorite.handler(({ input }) => conversation.toggleFavorite(input)),
     },
     zen: {
       identity: operations.zen.identity.handler(() => {

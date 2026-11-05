@@ -11,4 +11,5 @@ export const chatQueries = {
   }),
   providers: (client: EngineClient) => queryOptions({ queryKey: ["providers", "status"], queryFn: () => client.providers.status(), staleTime: Number.POSITIVE_INFINITY }),
   active: (client: EngineClient) => queryOptions({ queryKey: ["providers", "active"], queryFn: () => client.providers.active() }),
+  favorites: (client: EngineClient) => queryOptions({ queryKey: ["providers", "favorites"], queryFn: () => client.providers.favorites() }),
 }

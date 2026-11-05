@@ -132,7 +132,8 @@ try {
   states["B window closed"] = await sample(app.pid)
 
   for (const provider of providers) {
-    await engine.providers.choose({ provider })
+    // Each provider's default account has the provider's id.
+    await engine.providers.choose({ account: provider })
     const events = await engine.conversation.events()
     await engine.conversation.send({ text: "Responda apenas: ok" })
 
