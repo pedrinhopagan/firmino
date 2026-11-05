@@ -1,6 +1,7 @@
 import { eventIterator, oc } from "@orpc/contract"
 import { z } from "zod"
 import { conversationEvent, conversationMessage, providerChoice, providerStatus } from "./conversation"
+import { googleStatus } from "./google"
 import { externalObservationSpan } from "./observation"
 import { whatsappStatus } from "./whatsapp"
 
@@ -33,5 +34,12 @@ export const engineContract = {
     events: oc.output(eventIterator(whatsappStatus)).route({ method: "GET", path: "/whatsapp/events" }),
     link: oc.output(whatsappStatus).route({ method: "POST", path: "/whatsapp/link" }),
     unlink: oc.route({ method: "POST", path: "/whatsapp/unlink" }),
+  },
+  google: {
+    /** The current status first, then every change. */
+    events: oc.output(eventIterator(googleStatus)).route({ method: "GET", path: "/google/events" }),
+    connect: oc.output(googleStatus).route({ method: "POST", path: "/google/connect" }),
+    /** Cancels a consent in progress, or revokes the connection. */
+    disconnect: oc.route({ method: "POST", path: "/google/disconnect" }),
   },
 }

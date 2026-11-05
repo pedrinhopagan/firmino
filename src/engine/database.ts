@@ -5,8 +5,8 @@ import { type Routine, storedRoutine } from "./routines"
 import { storedTrigger, type Trigger } from "./triggers"
 import { openWhatsappStore } from "./whatsapp/whatsapp-store"
 
-/** Small persisted values: the active provider, its model, each provider's session to resume, and the linked WhatsApp account with its keys. */
-type StateKey = "provider" | `model.${ProviderId}` | `session.${ProviderId}` | "whatsapp.auth" | "whatsapp.account"
+/** Small persisted values: the active provider, its model, each provider's session to resume, the linked WhatsApp account with its keys, and the Google account with its tokens and the Gmail history id e-mail Gatilhos watch from. */
+type StateKey = "provider" | `model.${ProviderId}` | `session.${ProviderId}` | "whatsapp.auth" | "whatsapp.account" | "google.credentials" | "google.account" | "google.historyId"
 
 const messagePageSize = 50
 const transcriptLimit = 20

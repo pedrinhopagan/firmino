@@ -7,6 +7,12 @@ export const engineReadyMessage = z.object({
   port: z.int().min(1),
 })
 
+/** Asks Main to open Google's consent page in the system browser, where the user's own Google session lives. */
+export const engineOpenConsentMessage = z.object({
+  type: z.literal("open-consent"),
+  url: z.url({ protocol: /^https$/, hostname: /^accounts\.google\.com$/ }),
+})
+
 const forwardedObservationEvent = z.strictObject({
   type: z.literal("observation"),
   name: observationName,

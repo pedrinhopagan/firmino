@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto"
 import { join } from "node:path"
-import { app, BrowserWindow, ipcMain } from "electron"
+import { app, BrowserWindow, ipcMain, shell } from "electron"
 import { resolveAppProfile } from "@src/shared/app-profile"
 import { EngineProcess } from "./engine-process"
 
@@ -52,6 +52,12 @@ const engine = new EngineProcess({
   dataDirectory: app.getPath("userData"),
   appVersion: app.getVersion(),
   development: !app.isPackaged,
+  ...(import.meta.env.MAIN_VITE_GOOGLE_CLIENT_ID ? { googleClient: { id: import.meta.env.MAIN_VITE_GOOGLE_CLIENT_ID, ...(import.meta.env.MAIN_VITE_GOOGLE_CLIENT_SECRET ? { secret: import.meta.env.MAIN_VITE_GOOGLE_CLIENT_SECRET } : {}) } } : {}),
+  onOpenConsent(url) {
+    shell.openExternal(url).catch((error: unknown) => {
+      console.error(error)
+    })
+  },
   onUnexpectedExit(error) {
     console.error(error)
     app.exit(1)

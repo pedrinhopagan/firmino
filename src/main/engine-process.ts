@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { once } from "node:events"
 import { setTimeout as sleep } from "node:timers/promises"
-import { type EngineConnection, engineReadyMessage, type ForwardedObservation, type ForwardedObservationEvent } from "@src/shared/engine-ipc"
+import { type EngineConnection, engineOpenConsentMessage, engineReadyMessage, type ForwardedObservation, type ForwardedObservationEvent } from "@src/shared/engine-ipc"
 import { parse } from "@src/shared/parse"
 import { inheritedEnvironment } from "./child-environment"
 
@@ -10,7 +10,10 @@ interface EngineProcessOptions {
   dataDirectory: string
   appVersion: string
   development: boolean
+  /** The OAuth client the build was given; without it, Conexões says Google is unavailable. */
+  googleClient?: { id: string; secret?: string }
   onUnexpectedExit: (error: Error) => void
+  onOpenConsent: (url: string) => void
 }
 
 interface ChildExit {
@@ -51,6 +54,8 @@ export class EngineProcess {
         KOLEGA_ENGINE_TOKEN: token,
         KOLEGA_DATA_DIRECTORY: this.options.dataDirectory,
         KOLEGA_DEVELOPMENT: this.options.development ? "true" : "false",
+        ...(this.options.googleClient ? { KOLEGA_GOOGLE_CLIENT_ID: this.options.googleClient.id } : {}),
+        ...(this.options.googleClient?.secret ? { KOLEGA_GOOGLE_CLIENT_SECRET: this.options.googleClient.secret } : {}),
       },
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     })
@@ -84,6 +89,13 @@ export class EngineProcess {
     })
 
     this.listening = { url: `http://127.0.0.1:${ready.port}/rpc`, token }
+    child.on("message", (message) => {
+      const consent = engineOpenConsentMessage.safeParse(message)
+
+      if (consent.success) {
+        this.options.onOpenConsent(consent.data.url)
+      }
+    })
     await this.send({
       type: "span",
       span: {
