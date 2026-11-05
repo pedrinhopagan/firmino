@@ -12,3 +12,5 @@ bun run dev
 ```
 
 `bun run check` executa lint, typecheck e a busca de código morto. `bun run package:linux` gera o AppImage em `release/`.
+
+`bun run install:linux` gera o AppImage e o instala em `~/.local/bin/kolega`, com entrada no menu e início com o sistema na bandeja. Rode de novo para atualizar.

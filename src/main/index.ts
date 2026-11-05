@@ -43,6 +43,8 @@ const placing = app.whenReady().then(() => placement.start({ resourceClass: appP
   console.warn("KWin placement not loaded; the compositor places the window.", error instanceof Error ? error.message : error)
 })
 let creating: Promise<void> | undefined
+let shownAt = 0
+const activationGraceMs = 500
 
 function showWindow(window: BrowserWindow) {
   // Wayland ignores restore() and focus() on a minimized or covered window; unmapping and mapping it again brings it to the front.
@@ -50,10 +52,11 @@ function showWindow(window: BrowserWindow) {
   window.show()
   placement.place(window)
   window.focus()
+  shownAt = Date.now()
 }
 
 function toggleWindow() {
-  if (mainWindow?.isVisible() && mainWindow.isFocused()) {
+  if (mainWindow?.isVisible() && (mainWindow.isFocused() || Date.now() - shownAt < activationGraceMs)) {
     mainWindow.hide()
 
     return
@@ -220,7 +223,7 @@ void app.whenReady().then(async () => {
   ipcMain.handle("engine:get-connection", () => starting.then(() => engine.connection))
 
   // Both are awaited together so a window that fails to load stops the app even before the Engine is ready.
-  await Promise.all([openWindow(), starting.then(async () => {
+  await Promise.all([process.argv.includes("--hidden") ? undefined : openWindow(), starting.then(async () => {
     await engine.event({ name: "main.started", attributes: { process: "main", status: "ready", version: app.getVersion() } })
     tray = new Tray(icon)
     tray.setToolTip(appProfile.name)

@@ -69,7 +69,8 @@ export class WindowPlacement {
       throw new Error(`KWin did not load the placement script: ${stdout.trim()}`)
     }
 
-    await run("dbus-send", ["--session", "--print-reply", "--dest=org.kde.KWin", `/Scripting/Script${id}`, "org.kde.kwin.Script.run"])
+    // KWin reuses script ids after an unload, so `/Scripting/Script<id>.run` can start another script; `start()` runs every loaded one, and the script anchors a window that already exists.
+    await kwinCall("start")
     this.kwinPlugin = plugin
   }
 
