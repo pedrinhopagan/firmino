@@ -1,6 +1,6 @@
 import { eventIterator, oc } from "@orpc/contract"
 import { z } from "zod"
-import { conversationEvent, conversationMessage, providerChoice, providerStatus } from "./conversation"
+import { conversationEvent, conversationMessage, newProviderAccount, providerAccount, providerChoice, providerLoginEvent, providerStatus } from "./conversation"
 import { googleStatus } from "./google"
 import { externalObservationSpan } from "./observation"
 import { whatsappStatus } from "./whatsapp"
@@ -30,6 +30,15 @@ export const engineContract = {
     status: oc.output(z.array(providerStatus)).route({ method: "GET", path: "/providers/status" }),
     active: oc.output(providerChoice).route({ method: "GET", path: "/providers/active" }),
     choose: oc.errors(busy).input(providerChoice).output(providerChoice).route({ method: "POST", path: "/providers/active" }),
+    add: oc.input(newProviderAccount).output(providerAccount).route({ method: "POST", path: "/providers/accounts" }),
+    update: oc.input(providerAccount.pick({ id: true, name: true, enabled: true })).output(providerAccount).route({ method: "PATCH", path: "/providers/accounts" }),
+    remove: oc.input(z.object({ id: z.string() })).route({ method: "DELETE", path: "/providers/accounts" }),
+    /** Adds the Codex and Claude accounts T3 Code uses, and updates the ones Kolega already has. */
+    importT3: oc.output(z.array(providerAccount)).route({ method: "POST", path: "/providers/accounts/import-t3" }),
+    /** Opens the provider's sign-in page; the stream ends when the sign-in finishes, and aborting it cancels the sign-in. */
+    login: oc.input(z.object({ id: z.string() })).output(eventIterator(providerLoginEvent)).route({ method: "POST", path: "/providers/login" }),
+    /** The code Claude's sign-in page shows, for the sign-in in progress. */
+    loginCode: oc.input(z.object({ id: z.string(), code: z.string().trim().min(1) })).route({ method: "POST", path: "/providers/login/code" }),
   },
   zen: {
     /** The Zen account the browser imports; absent until the user chooses one. */

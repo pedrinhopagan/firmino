@@ -2,11 +2,14 @@ import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthro
 import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
 import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
-import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
+import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const statusTimeoutMs = 10_000
+const loginUrlTimeoutMs = 20_000
+/** `claude auth login` prints the page to open when it cannot open a browser, which the Engine never can. */
+const loginUrlPattern = /https:\/\/\S+\/oauth\/authorize\S+/
 
-const authStatus = z.object({ loggedIn: z.boolean(), email: z.string().optional() })
+const authStatus = z.object({ loggedIn: z.boolean(), email: z.string().optional(), subscriptionType: z.string().nullable().optional() })
 const streamEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("content_block_start"), content_block: z.object({ type: z.string(), name: z.string().optional() }) }),
   z.object({ type: z.literal("content_block_delta"), delta: z.object({ type: z.string(), text: z.string().optional() }) }),
@@ -104,7 +107,7 @@ export class ClaudeSession implements ProviderSession {
       query: query({
         prompt: inbox,
         options: {
-          pathToClaudeCodeExecutable: this.options.executable,
+          pathToClaudeCodeExecutable: this.options.launch.executable,
           cwd: kolegaWorkingDirectory,
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
@@ -115,7 +118,7 @@ export class ClaudeSession implements ProviderSession {
           skills: [],
           settings: { autoMemoryEnabled: false },
           // Claude expands the variable itself, so the token stays out of the --mcp-config argument other users can read.
-          env: { ...process.env, [kolegaMcpTokenVariable]: this.options.mcp.token, MCP_TOOL_TIMEOUT: String(kolegaToolTimeoutMs) },
+          env: { ...process.env, ...this.options.launch.env, [kolegaMcpTokenVariable]: this.options.mcp.token, MCP_TOOL_TIMEOUT: String(kolegaToolTimeoutMs) },
           mcpServers: { kolega: { type: "http", url: this.options.mcp.url, headers: { authorization: `Bearer \${${kolegaMcpTokenVariable}}` } } },
           ...(model ? { model } : {}),
           ...(this.sessionId ? { resume: this.sessionId } : {}),
@@ -225,21 +228,61 @@ export class ClaudeSession implements ProviderSession {
   }
 }
 
-export async function claudeStatus(): Promise<ProviderStatus> {
-  const executable = Bun.which("claude", { PATH: process.env.PATH })
-
-  if (!executable) {
-    return { provider: "claude", installed: false, loggedIn: false, models: [] }
-  }
-
-  const child = Bun.spawn([executable, "auth", "status", "--json"], { stdout: "pipe", stderr: "ignore", timeout: statusTimeoutMs })
+export async function claudeStatus(launch: ProviderLaunch) {
+  const child = Bun.spawn([launch.executable, "auth", "status", "--json"], { env: { ...process.env, ...launch.env }, stdout: "pipe", stderr: "ignore", timeout: statusTimeoutMs })
   const auth = authStatus.parse(JSON.parse(await new Response(child.stdout).text()))
 
   return {
-    provider: "claude",
     installed: true,
     loggedIn: auth.loggedIn,
-    ...(auth.email ? { account: auth.email } : {}),
+    ...(auth.email ? { email: auth.email } : {}),
+    ...(auth.subscriptionType ? { plan: auth.subscriptionType } : {}),
     models: claudeModels,
+  } satisfies Omit<ProviderStatus, "account">
+}
+
+/** The sign-in page the CLI prints. The output keeps draining afterwards, so the CLI never writes to a closed pipe. */
+function loginUrl(output: ReadableStream<Uint8Array<ArrayBuffer>>) {
+  const found = Promise.withResolvers<string>()
+  let printed = ""
+
+  void (async () => {
+    for await (const chunk of output.pipeThrough(new TextDecoderStream())) {
+      printed += chunk
+      const url = loginUrlPattern.exec(printed)?.[0]
+
+      if (url) {
+        found.resolve(url)
+      }
+    }
+
+    found.reject(new Error(printed.trim() || "O Claude não mostrou a página de login."))
+  })()
+
+  return found.promise
+}
+
+/** Subscription sign-in through `claude auth login`: the page shows a code, and the CLI saves the login in the account's CLAUDE_CONFIG_DIR once it reads that code. */
+export async function claudeLogin(launch: ProviderLaunch): Promise<ProviderLogin> {
+  const child = Bun.spawn([launch.executable, "auth", "login", "--claudeai"], { cwd: kolegaWorkingDirectory, env: { ...process.env, ...launch.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe" })
+  const timer = setTimeout(() => child.kill(), loginUrlTimeoutMs)
+  const url = await loginUrl(child.stdout).finally(() => clearTimeout(timer)).catch((error: unknown) => {
+    child.kill()
+
+    throw error
+  })
+
+  return {
+    url,
+    done: child.exited.then(async () => {
+      if (!(await claudeStatus(launch)).loggedIn) {
+        throw new Error((await new Response(child.stderr).text()).trim() || "O Claude não concluiu o login.")
+      }
+    }),
+    submitCode: (code) => {
+      void child.stdin.write(`${code}\n`)
+      void child.stdin.flush()
+    },
+    cancel: () => child.kill(),
   }
 }

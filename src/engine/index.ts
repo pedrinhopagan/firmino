@@ -11,7 +11,9 @@ import { createEngineRouter } from "./engine-router"
 import { createEngineServer } from "./engine-server"
 import { Google } from "./google/google"
 import { handleKolegaMcp, kolegaMcpPath } from "./kolega-mcp"
+import { Memory } from "./memory"
 import { createObservationSystem } from "./observability"
+import { ProviderAccounts } from "./providers/provider-accounts"
 import { Routines } from "./routines"
 import { Triggers } from "./triggers"
 import { Whatsapp } from "./whatsapp/whatsapp"
@@ -84,7 +86,10 @@ function turnNotice(end: QueuedTurnEnd): EngineTurnNotice | undefined {
   return { type: "turn-notice", title, body: preview(end.reply ?? "Terminou.") }
 }
 
-const conversation = new Conversation(database, observability, {
+const openConsent = (url: string) => process.send?.({ type: "open-consent", url })
+const accounts = new ProviderAccounts(database, observability, environment.KOLEGA_DATA_DIRECTORY, openConsent)
+const memory = new Memory(database)
+const conversation = new Conversation(database, observability, accounts, memory, {
   token: mcpToken,
   // Read when a provider session opens, after the server below is listening.
   get url() {
@@ -102,12 +107,13 @@ const routines = new Routines(database, conversation, observability)
 const triggers = new Triggers(database, conversation, observability, () => google.watchMail())
 const browser = new Browser(observability, triggers)
 const whatsapp = new Whatsapp(database, observability, triggers)
-const google = new Google(database, observability, triggers, (url) => process.send?.({ type: "open-consent", url }), environment.KOLEGA_GOOGLE_CLIENT_ID ? { id: environment.KOLEGA_GOOGLE_CLIENT_ID, ...(environment.KOLEGA_GOOGLE_CLIENT_SECRET ? { secret: environment.KOLEGA_GOOGLE_CLIENT_SECRET } : {}) } : undefined)
+const google = new Google(database, observability, triggers, openConsent, environment.KOLEGA_GOOGLE_CLIENT_ID ? { id: environment.KOLEGA_GOOGLE_CLIENT_ID, ...(environment.KOLEGA_GOOGLE_CLIENT_SECRET ? { secret: environment.KOLEGA_GOOGLE_CLIENT_SECRET } : {}) } : undefined)
 // The router is built before the server listens: built after, it costs about 3 ms more of boot.
 const server = createEngineServer({
   token: environment.KOLEGA_ENGINE_TOKEN,
-  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, conversation, browser, whatsapp, google })),
+  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google })),
   mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => {
+    memory.registerTools(mcp)
     routines.registerTools(mcp)
     triggers.registerTools(mcp)
     whatsapp.registerTools(mcp)

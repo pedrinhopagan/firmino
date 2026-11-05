@@ -1,13 +1,13 @@
 import type { ComponentProps } from "react"
 
-type ButtonProps = ComponentProps<"button"> & { variant?: "primary" | "text" | "danger" }
+type ButtonProps = ComponentProps<"button"> & { variant?: "primary" | "ghost" | "danger" }
 
-const baseClassName = "shrink-0 rounded-lg px-3.5 py-2 text-control transition-[color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none"
+const baseClassName = "inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border px-3 text-sm font-medium whitespace-nowrap outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64"
 
 const variantClassNames = {
-  primary: "border-0 bg-accent font-semibold text-accent-ink hover:bg-primary active:bg-focus disabled:bg-surface-active disabled:text-muted",
-  text: "border-0 bg-transparent font-medium text-muted hover:bg-surface-hover hover:text-primary focus-visible:bg-surface-hover focus-visible:text-primary active:bg-surface-active disabled:opacity-60",
-  danger: "border border-outline-strong bg-transparent font-medium text-status-error hover:bg-surface-hover focus-visible:bg-surface-hover active:bg-surface-active disabled:opacity-60",
+  primary: "border-primary bg-primary text-primary-foreground shadow-xs hover:border-primary-hover hover:bg-primary-hover",
+  ghost: "border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
+  danger: "border-input bg-popover text-destructive-foreground shadow-xs/5 hover:border-destructive/32 hover:bg-destructive/4",
 }
 
 export function Button({ variant = "primary", className, type = "button", ...props }: ButtonProps) {
