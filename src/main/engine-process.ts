@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { once } from "node:events"
 import { setTimeout as sleep } from "node:timers/promises"
 import { browserCancel, type BrowserReply, browserRequest, type BrowserRequest } from "@src/shared/browser"
-import { type EngineConnection, engineOpenConsentMessage, engineReadyMessage, type ForwardedObservation, type ForwardedObservationEvent } from "@src/shared/engine-ipc"
+import { type EngineConnection, engineOpenConsentMessage, engineReadyMessage, type EngineTurnNotice, engineTurnNoticeMessage, type ForwardedObservation, type ForwardedObservationEvent } from "@src/shared/engine-ipc"
 import { parse } from "@src/shared/parse"
 import { inheritedEnvironment } from "./child-environment"
 
@@ -17,6 +17,7 @@ interface EngineProcessOptions {
   onOpenConsent: (url: string) => void
   onBrowserRequest: (request: BrowserRequest) => void
   onBrowserCancel: (id: string) => void
+  onTurnNotice: (notice: EngineTurnNotice) => void
 }
 
 interface ChildExit {
@@ -97,6 +98,14 @@ export class EngineProcess {
 
       if (consent.success) {
         this.options.onOpenConsent(consent.data.url)
+
+        return
+      }
+
+      const notice = engineTurnNoticeMessage.safeParse(message)
+
+      if (notice.success) {
+        this.options.onTurnNotice(notice.data)
 
         return
       }

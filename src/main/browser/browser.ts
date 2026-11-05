@@ -1,11 +1,12 @@
-import { type BrowserWindow, ipcMain, type Session, View, WebContentsView } from "electron"
+import { BaseWindow, type BrowserWindow, ipcMain, type Session, View, WebContentsView } from "electron"
 import { type BrowserAction, browserBounds, type BrowserBounds, type BrowserReply, type BrowserRequest, type BrowserState } from "@src/shared/browser"
 import { parse } from "@src/shared/parse"
 import { BrowserDriver } from "./browser-driver"
 import { importZenSession } from "./zen-session"
 
 const webPreferences = { partition: "persist:kolega-browser", sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
-const parked = { x: 1 - 1280, y: 1 - 800, width: 1280, height: 800 }
+const pageSize = { width: 1280, height: 800 }
+const parked = { x: 1 - pageSize.width, y: 1 - pageSize.height, ...pageSize }
 /** An idle page closes after this, freeing its renderer process; logins stay in the session, so reopening costs one load. */
 const idleMs = 5 * 60_000
 /** How long an action waits for the user to give control back before it answers that the user still has it. */
@@ -38,11 +39,15 @@ export class Browser {
   private readonly waiters = new Set<() => void>()
   private idle?: ReturnType<typeof setTimeout>
   private preparingSession?: Promise<void>
+  private window?: BrowserWindow
+  private hiddenHost?: BaseWindow
 
-  constructor(private readonly window: BrowserWindow, private readonly reply: (reply: BrowserReply) => void) {
+  constructor(private readonly reply: (reply: BrowserReply) => void, private readonly onHandoff: (reason: string) => void) {
     const handle = (name: string, action: (raw: unknown) => unknown) => {
       ipcMain.handle(`browser:${name}`, (event, raw: unknown) => {
-        if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
+        const window = this.window
+
+        if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
           throw new Error("Untrusted browser caller")
         }
 
@@ -57,6 +62,25 @@ export class Browser {
       this.bounds = parse(browserBounds, raw)
       this.place()
     })
+  }
+
+  attach(window: BrowserWindow) {
+    this.window = window
+    window.once("close", () => {
+      const page = this.page
+      this.window = undefined
+      this.bounds = undefined
+
+      if (page) {
+        window.contentView.removeChildView(page.view)
+        window.contentView.removeChildView(page.cover)
+        this.park(page)
+      }
+    })
+
+    if (this.page) {
+      this.park(this.page)
+    }
   }
 
   /** Runs one action from the Engine and replies; a newer request ends the one still running. */
@@ -98,11 +122,11 @@ export class Browser {
     this.page = undefined
     clearTimeout(this.idle)
     page.driver.close()
-
-    if (!this.window.isDestroyed()) {
-      this.window.contentView.removeChildView(page.view)
-      this.window.contentView.removeChildView(page.cover)
-    }
+    this.window?.contentView.removeChildView(page.view)
+    this.window?.contentView.removeChildView(page.cover)
+    this.hiddenHost?.contentView.removeChildView(page.view)
+    this.hiddenHost?.destroy()
+    this.hiddenHost = undefined
 
     void page.view.webContents.session.cookies.flushStore()
     page.view.webContents.close()
@@ -131,6 +155,7 @@ export class Browser {
       page.control = "user"
       page.reason = input.reason
       this.publish()
+      this.onHandoff(input.reason)
       await this.waitForControl(signal)
 
       return "The user gave control back. Take a fresh snapshot before continuing."
@@ -232,7 +257,7 @@ export class Browser {
   private place() {
     const page = this.page
 
-    if (page?.control !== "user" || !this.bounds || this.window.isDestroyed()) {
+    if (page?.control !== "user" || !this.bounds || !this.window) {
       return
     }
 
@@ -248,18 +273,27 @@ export class Browser {
   }
 
   /**
-   * Keeps the view in the window with all but one pixel outside it, under a cover. Chromium counts a view out of every
+   * Keeps the view in the chat window with all but one pixel outside it, under a cover. Chromium counts a view out of every
    * window, or wholly out of its area, as hidden: it lays it out at 0x0 and drops its input. A view over the whole
    * Renderer hides the Renderer instead, and child views always sit above the Renderer, so it cannot hide behind it.
+   * Without the chat window, the view fills a hidden window of its own, where the driver falls back to in-page events.
    */
   private park(page: Page) {
-    page.view.setBounds(parked)
+    if (!this.window) {
+      this.hiddenHost ??= new BaseWindow({ ...pageSize, show: false })
+      this.hiddenHost.contentView.addChildView(page.view)
+      page.view.setBounds({ x: 0, y: 0, ...pageSize })
 
-    if (!this.window.isDestroyed()) {
-      this.window.contentView.addChildView(page.view)
-      this.window.contentView.addChildView(page.cover)
-      this.window.webContents.focus()
+      return
     }
+
+    this.hiddenHost?.contentView.removeChildView(page.view)
+    this.hiddenHost?.destroy()
+    this.hiddenHost = undefined
+    page.view.setBounds(parked)
+    this.window.contentView.addChildView(page.view)
+    this.window.contentView.addChildView(page.cover)
+    this.window.webContents.focus()
   }
 
   private async waitForControl(signal: AbortSignal) {
@@ -312,8 +346,6 @@ export class Browser {
   }
 
   private publish() {
-    if (!this.window.isDestroyed()) {
-      this.window.webContents.send("browser:state", this.state())
-    }
+    this.window?.webContents.send("browser:state", this.state())
   }
 }

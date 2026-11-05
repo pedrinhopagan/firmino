@@ -222,7 +222,7 @@ export class ClaudeSession implements ProviderSession {
 }
 
 export async function claudeStatus(): Promise<ProviderStatus> {
-  const executable = Bun.which("claude")
+  const executable = Bun.which("claude", { PATH: process.env.PATH })
 
   if (!executable) {
     return { provider: "claude", installed: false, loggedIn: false, models: [] }

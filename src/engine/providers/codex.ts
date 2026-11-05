@@ -323,7 +323,7 @@ export class CodexSession implements ProviderSession {
 }
 
 export async function codexStatus(): Promise<ProviderStatus> {
-  const executable = Bun.which("codex")
+  const executable = Bun.which("codex", { PATH: process.env.PATH })
 
   if (!executable) {
     return { provider: "codex", installed: false, loggedIn: false, models: [] }

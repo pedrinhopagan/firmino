@@ -13,6 +13,12 @@ export const engineOpenConsentMessage = z.object({
   url: z.url({ protocol: /^https$/, hostname: /^accounts\.google\.com$/ }),
 })
 
+export const engineTurnNoticeMessage = z.object({
+  type: z.literal("turn-notice"),
+  title: z.string().min(1),
+  body: z.string(),
+})
+
 const forwardedObservationEvent = z.strictObject({
   type: z.literal("observation"),
   name: observationName,
@@ -33,5 +39,6 @@ export interface EngineConnection {
   token: string
 }
 
+export type EngineTurnNotice = z.infer<typeof engineTurnNoticeMessage>
 export type ForwardedObservationEvent = z.infer<typeof forwardedObservationEvent>
 export type ForwardedObservation = z.infer<typeof forwardedObservation>

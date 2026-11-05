@@ -3,6 +3,7 @@ import type { ConversationEvent, ConversationMessage, ProviderChoice, ProviderId
 import { providerId } from "@src/shared/conversation"
 import type { KolegaDatabase } from "./database"
 import type { KolegaMcpConnection } from "./kolega-mcp"
+import { adoptLoginShellPath } from "./login-shell-path"
 import type { Observability } from "./observability"
 import { ClaudeSession, claudeStatus } from "./providers/claude"
 import { CodexSession, codexStatus } from "./providers/codex"
@@ -19,6 +20,10 @@ export interface QueuedTurn {
 }
 
 type Framed = Pick<ConversationMessage, "role" | "text" | "routine" | "trigger">
+
+export interface QueuedTurnEnd extends TurnResult, Pick<ConversationMessage, "routine" | "trigger"> {
+  reply?: string
+}
 
 function speaker(message: Framed) {
   if (message.routine) {
@@ -73,10 +78,13 @@ export class Conversation {
   private running?: { session: ProviderSession; reply: string; tool?: string; started: ConversationEvent }
   /** Settles when the turn in progress ends. */
   private idle: Promise<TurnOutcome> = Promise.resolve("completed")
+  private loginShellPath?: Promise<void>
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly mcp: KolegaMcpConnection) {}
+  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly mcp: KolegaMcpConnection, private readonly onQueuedTurnEnd: (end: QueuedTurnEnd) => void) {}
 
-  send(text: string) {
+  async send(text: string) {
+    await this.providerPath()
+
     if (this.running) {
       throw new ORPCError("TURN_RUNNING")
     }
@@ -89,6 +97,8 @@ export class Conversation {
    * `claim` runs in the same tick the turn starts, so no user message starts in between and the turn it returns is current.
    */
   async runQueued(claim: () => QueuedTurn | undefined) {
+    await this.providerPath()
+
     while (this.running) {
       await this.idle
     }
@@ -134,6 +144,8 @@ export class Conversation {
   }
 
   async status() {
+    await this.providerPath()
+
     return await Promise.all(Object.entries(providers).map(([provider, adapter]) => this.observability.span({ name: "provider.status", attributes: { provider } }, () => adapter.status()).catch((): ProviderStatus => ({
       provider: providerId.parse(provider),
       installed: true,
@@ -148,6 +160,11 @@ export class Conversation {
     }
   }
 
+  private async providerPath() {
+    this.loginShellPath ??= this.observability.span({ name: "engine.loginshellpath" }, () => adoptLoginShellPath())
+    await this.loginShellPath
+  }
+
   private session(provider: ProviderId) {
     const existing = this.sessions.get(provider)
 
@@ -155,7 +172,7 @@ export class Conversation {
       return existing
     }
 
-    const executable = Bun.which(provider)
+    const executable = Bun.which(provider, { PATH: process.env.PATH })
 
     if (!executable) {
       throw new ORPCError("PRECONDITION_FAILED", { message: `${provider} is not installed` })
@@ -181,12 +198,12 @@ export class Conversation {
     const started: ConversationEvent = { type: "started", message }
     this.running = { session, reply: "", started }
     this.publisher.publish("event", started)
-    this.idle = this.answer({ ...choice, text: `${clock(new Date())}\n\n${withTranscript(unseen, framed(message))}`, session })
+    this.idle = this.answer({ ...choice, text: `${clock(new Date())}\n\n${withTranscript(unseen, framed(message))}`, session, origin: message })
 
     return { message, finished: this.idle }
   }
 
-  private async answer(turn: ProviderChoice & { text: string; session: ProviderSession }): Promise<TurnOutcome> {
+  private async answer(turn: ProviderChoice & { text: string; session: ProviderSession; origin: Pick<ConversationMessage, "routine" | "trigger"> }): Promise<TurnOutcome> {
     const result = await this.observability.span({ name: "provider.turn", attributes: { provider: turn.provider } }, () => turn.session.turn(turn, {
       delta: (text) => {
         if (this.running) {
@@ -209,6 +226,10 @@ export class Conversation {
     const message = reply ? this.database.messages.insert({ role: "assistant", text: reply, provider: turn.provider }) : undefined
 
     this.publisher.publish("event", { type: "finished", outcome: result.outcome, ...(message ? { message } : {}), ...(result.error ? { error: result.error } : {}) })
+
+    if (turn.origin.routine || turn.origin.trigger) {
+      this.onQueuedTurnEnd({ routine: turn.origin.routine, trigger: turn.origin.trigger, outcome: result.outcome, ...(reply ? { reply } : {}), ...(result.error ? { error: result.error } : {}) })
+    }
 
     return result.outcome
   }

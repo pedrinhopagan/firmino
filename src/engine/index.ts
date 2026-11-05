@@ -2,10 +2,10 @@ import { RPCHandler } from "@orpc/server/fetch"
 import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import { z } from "zod"
-import { forwardedObservation } from "@src/shared/engine-ipc"
+import { type EngineTurnNotice, forwardedObservation } from "@src/shared/engine-ipc"
 import { parse } from "@src/shared/parse"
 import { Browser } from "./browser"
-import { Conversation } from "./conversation"
+import { Conversation, type QueuedTurnEnd } from "./conversation"
 import { openDatabase } from "./database"
 import { createEngineRouter } from "./engine-router"
 import { createEngineServer } from "./engine-server"
@@ -56,12 +56,44 @@ process.on("message", (message) => {
 
 const database = openDatabase(join(environment.KOLEGA_DATA_DIRECTORY, "kolega.sqlite"))
 const mcpToken = randomBytes(32).toString("base64url")
+const noticePreviewLength = 100
+
+function preview(text: string) {
+  const line = text.replace(/\s+/g, " ").trim()
+
+  if (line.length <= noticePreviewLength) {
+    return line
+  }
+
+  return `${line.slice(0, noticePreviewLength - 1)}…`
+}
+
+function turnNotice(end: QueuedTurnEnd): EngineTurnNotice | undefined {
+  if (end.outcome === "interrupted") {
+    return undefined
+  }
+
+  const title = end.routine ? `Rotina "${end.routine}"` : `Gatilho "${end.trigger}"`
+
+  if (end.outcome === "failed") {
+    return { type: "turn-notice", title, body: `Erro: ${preview(end.error ?? "o agente falhou.")}` }
+  }
+
+  return { type: "turn-notice", title, body: preview(end.reply ?? "Terminou.") }
+}
+
 const conversation = new Conversation(database, observability, {
   token: mcpToken,
   // Read when a provider session opens, after the server below is listening.
   get url() {
     return `http://127.0.0.1:${server.port}${kolegaMcpPath}`
   },
+}, (end) => {
+  const notice = turnNotice(end)
+
+  if (notice) {
+    process.send?.(notice)
+  }
 })
 const routines = new Routines(database, conversation, observability)
 // Read when a tool changes a Gatilho, after Google below exists.
