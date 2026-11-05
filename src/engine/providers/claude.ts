@@ -1,13 +1,14 @@
 import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
-import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnResult } from "./provider"
+import { kolegaMcpTokenVariable } from "../kolega-mcp"
+import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const statusTimeoutMs = 10_000
 
 const authStatus = z.object({ loggedIn: z.boolean(), email: z.string().optional() })
 const streamEvent = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("content_block_start"), content_block: z.object({ type: z.string() }) }),
+  z.object({ type: z.literal("content_block_start"), content_block: z.object({ type: z.string(), name: z.string().optional() }) }),
   z.object({ type: z.literal("content_block_delta"), delta: z.object({ type: z.string(), text: z.string().optional() }) }),
 ])
 
@@ -46,7 +47,7 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
 
 interface ActiveTurn {
   done: PromiseWithResolvers<TurnResult>
-  onDelta: Parameters<ProviderSession["turn"]>[1]
+  listener: TurnListener
   wrote: boolean
   interrupted: boolean
 }
@@ -60,10 +61,10 @@ export class ClaudeSession implements ProviderSession {
     this.sessionId = options.resume
   }
 
-  async turn(...[input, onDelta]: Parameters<ProviderSession["turn"]>) {
+  async turn(...[input, listener]: Parameters<ProviderSession["turn"]>) {
     const live = this.live ?? this.open(input.model)
     // Registered before the model switch, so a Stop while it runs is not lost.
-    const active: ActiveTurn = { done: Promise.withResolvers(), onDelta, wrote: false, interrupted: false }
+    const active: ActiveTurn = { done: Promise.withResolvers(), listener, wrote: false, interrupted: false }
     this.active = active
 
     if (live.model !== input.model) {
@@ -109,6 +110,9 @@ export class ClaudeSession implements ProviderSession {
           allowDangerouslySkipPermissions: true,
           includePartialMessages: true,
           systemPrompt: { type: "preset", preset: "claude_code", append: kolegaInstructions },
+          // Claude expands the variable itself, so the token stays out of the --mcp-config argument other users can read.
+          env: { ...process.env, [kolegaMcpTokenVariable]: this.options.mcp.token },
+          mcpServers: { kolega: { type: "http", url: this.options.mcp.url, headers: { authorization: `Bearer \${${kolegaMcpTokenVariable}}` } } },
           ...(model ? { model } : {}),
           ...(this.sessionId ? { resume: this.sessionId } : {}),
         },
@@ -180,8 +184,15 @@ export class ClaudeSession implements ProviderSession {
     }
 
     if (parsed.data.type === "content_block_start") {
-      if (parsed.data.content_block.type === "text" && active.wrote) {
-        active.onDelta("\n\n")
+      const block = parsed.data.content_block
+
+      if (block.type === "tool_use" && block.name) {
+        // MCP tools arrive as mcp__<server>__<tool>; the tool name alone matches what Codex reports.
+        active.listener.tool(block.name.replace(/^mcp__.+?__/, ""))
+      }
+
+      if (block.type === "text" && active.wrote) {
+        active.listener.delta("\n\n")
       }
 
       return
@@ -189,7 +200,7 @@ export class ClaudeSession implements ProviderSession {
 
     if (parsed.data.delta.type === "text_delta" && parsed.data.delta.text) {
       active.wrote = true
-      active.onDelta(parsed.data.delta.text)
+      active.listener.delta(parsed.data.delta.text)
     }
   }
 

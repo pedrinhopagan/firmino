@@ -1,4 +1,5 @@
 import { RPCHandler } from "@orpc/server/fetch"
+import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import { z } from "zod"
 import { forwardedObservation } from "@src/shared/engine-ipc"
@@ -7,13 +8,17 @@ import { Conversation } from "./conversation"
 import { openDatabase } from "./database"
 import { createEngineRouter } from "./engine-router"
 import { createEngineServer } from "./engine-server"
+import { handleKolegaMcp, kolegaMcpPath } from "./kolega-mcp"
 import { createObservationSystem } from "./observability"
+import { Routines } from "./routines"
 
 const environment = parse(z.object({
   KOLEGA_ENGINE_TOKEN: z.string().min(1),
   KOLEGA_DATA_DIRECTORY: z.string().min(1),
   KOLEGA_DEVELOPMENT: z.enum(["true", "false"]),
 }), process.env)
+// Providers inherit the Engine's environment and run any command the agent asks for; they reach Kolega only through the MCP token.
+delete process.env.KOLEGA_ENGINE_TOKEN
 const startupStartedAt = performance.now()
 const startedAt = new Date().toISOString()
 const { observability, receiver } = createObservationSystem({
@@ -39,10 +44,20 @@ process.on("message", (message) => {
 })
 
 const database = openDatabase(join(environment.KOLEGA_DATA_DIRECTORY, "kolega.sqlite"))
-const conversation = new Conversation(database, observability)
+const mcpToken = randomBytes(32).toString("base64url")
+const conversation = new Conversation(database, observability, {
+  token: mcpToken,
+  // Read when a provider session opens, after the server below is listening.
+  get url() {
+    return `http://127.0.0.1:${server.port}${kolegaMcpPath}`
+  },
+})
+const routines = new Routines(database, conversation, observability)
+// The router is built before the server listens: built after, it costs about 3 ms more of boot.
 const server = createEngineServer({
   token: environment.KOLEGA_ENGINE_TOKEN,
   handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, conversation })),
+  mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => routines.registerTools(mcp)) },
 })
 
 receiver.span({
@@ -64,6 +79,7 @@ async function shutdown() {
   }
 
   stopping = true
+  routines.close()
   conversation.close()
   await observability.span({ name: "engine.shutdown", attributes: { process: "engine", status: "stopped" } }, () => server.stop(true)).catch(() => {
     process.stderr.write("Bun Engine shutdown failed\n")

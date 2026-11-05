@@ -2,7 +2,8 @@ import type { Subprocess } from "bun"
 import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
-import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnResult } from "./provider"
+import { kolegaMcpTokenVariable } from "../kolega-mcp"
+import { errorMessage, kolegaInstructions, kolegaWorkingDirectory, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult } from "./provider"
 
 const requestTimeoutMs = 20_000
 
@@ -16,6 +17,14 @@ const rpcMessage = z.object({
 const threadResponse = z.object({ thread: z.object({ id: z.string() }) })
 const turnResponse = z.object({ turn: z.object({ id: z.string() }) })
 const agentMessageDelta = z.object({ turnId: z.string(), itemId: z.string(), delta: z.string() })
+/** The tool items Kolega shows while the agent works, each with the name to show. */
+const toolLabels: Record<string, string> = { commandExecution: "terminal", fileChange: "edição de arquivos", webSearch: "busca na web" }
+const itemStarted = z.object({
+  item: z.union([
+    z.object({ type: z.enum(["mcpToolCall", "dynamicToolCall"]), tool: z.string() }).transform((item) => item.tool),
+    z.object({ type: z.string() }).transform((item) => toolLabels[item.type]),
+  ]),
+})
 const turnCompleted = z.object({
   turn: z.object({
     id: z.string(),
@@ -46,8 +55,9 @@ class CodexAppServer {
     this.exited = this.read()
   }
 
-  static async start(executable: string, onNotification?: (method: string, params: unknown) => void) {
-    const server = new CodexAppServer(Bun.spawn([executable, "app-server"], { cwd: kolegaWorkingDirectory, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), onNotification)
+  static async start(executable: string, session?: { mcpToken: string; onNotification: (method: string, params: unknown) => void }) {
+    const env = { ...process.env, ...(session ? { [kolegaMcpTokenVariable]: session.mcpToken } : {}) }
+    const server = new CodexAppServer(Bun.spawn([executable, "app-server"], { cwd: kolegaWorkingDirectory, env, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), session?.onNotification)
 
     await server.request("initialize", { clientInfo: { name: "kolega", title: "Kolega", version: "0.1.0" }, capabilities: { experimentalApi: true } }).catch((error: unknown) => {
       server.process.kill()
@@ -137,7 +147,7 @@ function turnError(message: string) {
 
 interface ActiveTurn {
   done: PromiseWithResolvers<TurnResult>
-  onDelta: Parameters<ProviderSession["turn"]>[1]
+  listener: TurnListener
   turnId?: string
   itemId?: string
   interrupted: boolean
@@ -154,9 +164,9 @@ export class CodexSession implements ProviderSession {
     this.threadId = options.resume
   }
 
-  async turn(...[input, onDelta]: Parameters<ProviderSession["turn"]>) {
+  async turn(...[input, listener]: Parameters<ProviderSession["turn"]>) {
     // Registered before Codex starts, so a Stop during startup is not lost.
-    const active: ActiveTurn = { done: Promise.withResolvers(), onDelta, interrupted: false }
+    const active: ActiveTurn = { done: Promise.withResolvers(), listener, interrupted: false }
     this.active = active
 
     const started = await this.start(input, active).catch((error: unknown) => {
@@ -223,11 +233,13 @@ export class CodexSession implements ProviderSession {
   }
 
   private async open() {
-    const server = await CodexAppServer.start(this.options.executable, (method, params) => this.handle(method, params))
+    const server = await CodexAppServer.start(this.options.executable, { mcpToken: this.options.mcp.token, onNotification: (method, params) => this.handle(method, params) })
     this.live = server
     void server.exited.then(() => this.lost(server))
 
-    const thread = { ...runtimeMode, sandbox: "danger-full-access", developerInstructions: kolegaInstructions }
+    // Thread config overrides apply to resumed threads too; Codex reads the bearer token from its own environment.
+    const config = { mcp_servers: { kolega: { url: this.options.mcp.url, bearer_token_env_var: kolegaMcpTokenVariable } } }
+    const thread = { ...runtimeMode, sandbox: "danger-full-access", developerInstructions: kolegaInstructions, config }
     const resumed = this.threadId ? await server.request("thread/resume", { ...thread, threadId: this.threadId }).catch(() => undefined) : undefined
     this.threadId = parse(threadResponse, resumed ?? await server.request("thread/start", thread)).thread.id
     this.options.onSession(this.threadId)
@@ -253,11 +265,21 @@ export class CodexSession implements ProviderSession {
       const delta = parse(agentMessageDelta, params)
 
       if (active.itemId && active.itemId !== delta.itemId) {
-        active.onDelta("\n\n")
+        active.listener.delta("\n\n")
       }
 
       active.itemId = delta.itemId
-      active.onDelta(delta.delta)
+      active.listener.delta(delta.delta)
+
+      return
+    }
+
+    if (method === "item/started") {
+      const tool = itemStarted.safeParse(params)
+
+      if (tool.success && tool.data.item) {
+        active.listener.tool(tool.data.item)
+      }
 
       return
     }

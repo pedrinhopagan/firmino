@@ -1,5 +1,7 @@
 import { Database } from "bun:sqlite"
 import type { ConversationMessage, ProviderId } from "@src/shared/conversation"
+import { parse } from "@src/shared/parse"
+import { type Routine, storedRoutine } from "./routines"
 
 /** Small persisted values: the active provider, its model and each provider's session to resume. */
 type StateKey = "provider" | `model.${ProviderId}` | `session.${ProviderId}`
@@ -16,18 +18,43 @@ export function openDatabase(path: string) {
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     text TEXT NOT NULL,
     provider TEXT NOT NULL CHECK (provider IN ('codex', 'claude')),
+    routine TEXT,
     created_at TEXT NOT NULL
   )`)
+
+  if (!db.query("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'routine'").get()) {
+    db.run("ALTER TABLE messages ADD COLUMN routine TEXT")
+  }
+
   db.run("CREATE INDEX IF NOT EXISTS messages_answers ON messages (provider, role, id)")
   db.run("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+  db.run(`CREATE TABLE IF NOT EXISTS routines (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    frequency TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'completed', 'failed')),
+    next_run_at TEXT,
+    created_at TEXT NOT NULL
+  )`)
+  db.run("CREATE INDEX IF NOT EXISTS routines_due ON routines (status, next_run_at)")
 
-  const columns = "id, role, text, provider, created_at AS createdAt"
+  const columns = "id, role, text, provider, routine, created_at AS createdAt"
   const pageMessages = db.query<ConversationMessage, { before: number; limit: number }>(`SELECT ${columns} FROM messages WHERE id < $before ORDER BY id DESC LIMIT $limit`)
   const unseenMessages = db.query<ConversationMessage, { provider: ProviderId; limit: number }>(`SELECT ${columns} FROM messages WHERE id > COALESCE((SELECT MAX(id) FROM messages WHERE provider = $provider AND role = 'assistant'), 0) ORDER BY id DESC LIMIT $limit`)
-  const insertMessage = db.query<ConversationMessage, Omit<ConversationMessage, "id">>(`INSERT INTO messages (role, text, provider, created_at) VALUES ($role, $text, $provider, $createdAt) RETURNING ${columns}`)
+  const insertMessage = db.query<ConversationMessage, Omit<ConversationMessage, "id">>(`INSERT INTO messages (role, text, provider, routine, created_at) VALUES ($role, $text, $provider, $routine, $createdAt) RETURNING ${columns}`)
   const readState = db.query<{ value: string }, { key: StateKey }>("SELECT value FROM state WHERE key = $key")
   const writeState = db.query<null, { key: StateKey; value: string }>("INSERT INTO state (key, value) VALUES ($key, $value) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
   const deleteState = db.query<null, { key: StateKey }>("DELETE FROM state WHERE key = $key")
+  const routineColumns = "id, name, prompt, frequency, status, next_run_at AS nextRunAt, created_at AS createdAt"
+  const allRoutines = db.query<unknown, []>(`SELECT ${routineColumns} FROM routines ORDER BY created_at`)
+  const readRoutine = db.query<unknown, { id: string }>(`SELECT ${routineColumns} FROM routines WHERE id = $id`)
+  const dueRoutines = db.query<unknown, { before: string }>(`SELECT ${routineColumns} FROM routines WHERE status = 'active' AND next_run_at <= $before ORDER BY next_run_at`)
+  const nextRun = db.query<{ nextRunAt: string | null }, []>("SELECT MIN(next_run_at) AS nextRunAt FROM routines WHERE status = 'active' AND next_run_at IS NOT NULL")
+  const saveRoutine = db.query<null, Omit<Routine, "frequency"> & { frequency: string }>(`INSERT INTO routines (id, name, prompt, frequency, status, next_run_at, created_at) VALUES ($id, $name, $prompt, $frequency, $status, $nextRunAt, $createdAt)
+    ON CONFLICT (id) DO UPDATE SET name = excluded.name, prompt = excluded.prompt, frequency = excluded.frequency, status = excluded.status, next_run_at = excluded.next_run_at`)
+  const deleteRoutine = db.query<null, { id: string }>("DELETE FROM routines WHERE id = $id")
+  const routines = (rows: unknown[]) => rows.map((row) => parse(storedRoutine, row))
 
   return {
     messages: {
@@ -41,8 +68,8 @@ export function openDatabase(path: string) {
       },
       /** The latest messages since the provider's last answer, oldest first: what it has not seen. A turn stopped before delivery leaves no answer, so its context is sent again. */
       unseenBy: (provider: ProviderId) => unseenMessages.all({ provider, limit: transcriptLimit }).toReversed(),
-      insert(message: Omit<ConversationMessage, "id" | "createdAt">) {
-        const row = insertMessage.get({ ...message, createdAt: new Date().toISOString() })
+      insert(message: Pick<ConversationMessage, "role" | "text" | "provider"> & { routine?: string }) {
+        const row = insertMessage.get({ ...message, routine: message.routine ?? null, createdAt: new Date().toISOString() })
 
         if (!row) {
           throw new Error("Message insert returned no row")
@@ -62,6 +89,16 @@ export function openDatabase(path: string) {
 
         writeState.run({ key, value })
       },
+    },
+    routines: {
+      list: () => routines(allRoutines.all()),
+      get: (id: string) => routines(readRoutine.all({ id }))[0],
+      /** Active Rotinas whose run time is at or before `before`, earliest first. */
+      due: (before: Date) => routines(dueRoutines.all({ before: before.toISOString() })),
+      /** When the earliest active Rotina runs; absent when none is waiting. */
+      nextRunAt: () => nextRun.get()?.nextRunAt ?? undefined,
+      save: (routine: Routine) => saveRoutine.run({ ...routine, frequency: JSON.stringify(routine.frequency) }),
+      remove: (id: string) => deleteRoutine.run({ id }),
     },
     close: () => db.close(),
   }

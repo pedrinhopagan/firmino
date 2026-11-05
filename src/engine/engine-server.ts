@@ -1,6 +1,7 @@
 import type { RPCHandler } from "@orpc/server/fetch"
 import { timingSafeEqual } from "node:crypto"
 import type { EngineContext } from "./engine-router"
+import { kolegaMcpPath } from "./kolega-mcp"
 
 const rpcPrefix = "/rpc"
 const preflightHeaders = {
@@ -36,15 +37,27 @@ function withCors(response: Response, origin: string | null) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
-/** Serves the RPC router on a random loopback port, only to requests carrying the token Main generated for this run. */
-export function createEngineServer({ token, handler }: { token: string; handler: Pick<RPCHandler<EngineContext>, "handle"> }) {
+function bearer(token: string) {
   const expected = Buffer.from(`Bearer ${token}`)
 
-  function authorized(request: Request) {
+  return (request: Request) => {
     const given = Buffer.from(request.headers.get("authorization") ?? "")
 
     return given.length === expected.length && timingSafeEqual(given, expected)
   }
+}
+
+/**
+ * Serves, on a random loopback port, the RPC router to requests carrying the token Main generated for this run,
+ * and Kolega's MCP server to requests carrying the providers' own token.
+ */
+export function createEngineServer({ token, handler, mcp }: {
+  token: string
+  handler: Pick<RPCHandler<EngineContext>, "handle">
+  mcp: { token: string; handle(request: Request): Promise<Response> }
+}) {
+  const authorized = bearer(token)
+  const mcpAuthorized = bearer(mcp.token)
 
   async function rpc(request: Request) {
     if (!authorized(request)) {
@@ -83,6 +96,15 @@ export function createEngineServer({ token, handler }: { token: string; handler:
       }
 
       const { pathname } = new URL(request.url)
+
+      if (pathname === kolegaMcpPath) {
+        // Providers call from their own process and send no Origin; a browser page that does was refused above.
+        if (!mcpAuthorized(request)) {
+          return new Response("Unauthorized", { status: 401 })
+        }
+
+        return await mcp.handle(request)
+      }
 
       if (pathname === rpcPrefix || pathname.startsWith(`${rpcPrefix}/`)) {
         return withCors(await rpc(request), origin)

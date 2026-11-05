@@ -93,17 +93,28 @@ function Messages({ client }: { client: EngineClient }) {
 /** The streaming reply and the last turn's error, apart from the history so a delta rerenders only this. */
 function LiveReply() {
   const reply = useStore(chatStore, (state) => state.reply)
+  const tool = useStore(chatStore, (state) => state.tool)
   const error = useStore(chatStore, (state) => state.error)
 
   return (
     <>
-      {reply !== undefined && <p className="whitespace-pre-wrap text-body text-primary">{reply || <span className="text-muted">Pensando…</span>}</p>}
+      {reply !== undefined && (reply || !tool) && <p className="whitespace-pre-wrap text-body text-primary">{reply || <span className="text-muted">Pensando…</span>}</p>}
+      {tool && <p className="text-metadata text-muted" role="status">Usando {tool}…</p>}
       {error && <p className="text-support text-status-error" role="alert">{error}</p>}
     </>
   )
 }
 
 function Message({ message }: { message: ConversationMessage }) {
+  if (message.routine) {
+    return (
+      <div className="flex max-w-[80%] flex-col gap-1 self-end rounded-2xl border border-outline px-4 py-2">
+        <span className="text-metadata text-muted">Rotina · {message.routine}</span>
+        <p className="whitespace-pre-wrap text-body">{message.text}</p>
+      </div>
+    )
+  }
+
   if (message.role === "user") {
     return <p className="max-w-[80%] self-end whitespace-pre-wrap rounded-2xl bg-surface-raised px-4 py-2 text-body">{message.text}</p>
   }

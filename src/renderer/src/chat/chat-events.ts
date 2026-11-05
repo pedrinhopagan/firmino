@@ -36,6 +36,12 @@ export function subscribeChatEvents({ client, queryClient }: { client: EngineCli
       return
     }
 
+    if (event.type === "tool") {
+      chatStore.setState((state) => ({ ...state, tool: event.name }))
+
+      return
+    }
+
     if (event.message) {
       append(event.message)
     }

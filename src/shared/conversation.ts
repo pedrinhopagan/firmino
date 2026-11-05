@@ -7,6 +7,8 @@ export const conversationMessage = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string(),
   provider: providerId,
+  /** The name of the Rotina that sent this message; null when the user wrote it or Kolega answered. */
+  routine: z.string().nullable(),
   createdAt: z.string(),
 })
 
@@ -16,6 +18,7 @@ const turnOutcome = z.enum(["completed", "interrupted", "failed"])
 export const conversationEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("started"), message: conversationMessage }),
   z.object({ type: z.literal("delta"), text: z.string() }),
+  z.object({ type: z.literal("tool"), name: z.string() }),
   z.object({ type: z.literal("finished"), outcome: turnOutcome, message: conversationMessage.optional(), error: z.string().optional() }),
 ])
 

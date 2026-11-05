@@ -1,23 +1,39 @@
 import { EventPublisher, ORPCError } from "@orpc/server"
-import type { ConversationEvent, ConversationMessage, ProviderChoice, ProviderId, ProviderStatus } from "@src/shared/conversation"
+import type { ConversationEvent, ConversationMessage, ProviderChoice, ProviderId, ProviderStatus, TurnOutcome } from "@src/shared/conversation"
 import { providerId } from "@src/shared/conversation"
 import type { KolegaDatabase } from "./database"
+import type { KolegaMcpConnection } from "./kolega-mcp"
 import type { Observability } from "./observability"
 import { ClaudeSession, claudeStatus } from "./providers/claude"
 import { CodexSession, codexStatus } from "./providers/codex"
 import { errorMessage, type ProviderSession, type ProviderSessionOptions, type TurnResult } from "./providers/provider"
+import { localMinute, type Routine } from "./routines"
 
 const speakers = { user: "Usuário", assistant: "Kolega" }
 
+/** How a message reads to the provider: a Rotina's message says which Rotina sent it. */
+function framed(message: Pick<ConversationMessage, "role" | "text" | "routine">) {
+  if (message.routine) {
+    return `Rotina "${message.routine}" disparou agora:\n\n${message.text}`
+  }
+
+  return message.text
+}
+
 /** Hands a provider the turns another provider answered, so switching keeps the context. */
-function withTranscript(unseen: Pick<ConversationMessage, "role" | "text">[], text: string) {
+function withTranscript(unseen: Pick<ConversationMessage, "role" | "text" | "routine">[], text: string) {
   if (unseen.length === 0) {
     return text
   }
 
-  const transcript = unseen.map((message) => `${speakers[message.role]}: ${message.text}`).join("\n\n")
+  const transcript = unseen.map((message) => `${message.routine ? "Rotina" : speakers[message.role]}: ${framed(message)}`).join("\n\n")
 
-  return `Mensagens anteriores desta conversa, que você ainda não viu:\n\n${transcript}\n\nMensagem atual do usuário:\n\n${text}`
+  return `Mensagens anteriores desta conversa, que você ainda não viu:\n\n${transcript}\n\nMensagem atual:\n\n${text}`
+}
+
+/** The user's local date, time and timezone, so the agent can place "daqui a 2 minutos" and "amanhã às 9h". */
+function clock(now: Date) {
+  return `Agora: ${localMinute(now)}, ${now.toLocaleDateString("pt-BR", { weekday: "long" })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`
 }
 
 const providers = {
@@ -29,25 +45,36 @@ const providers = {
 export class Conversation {
   private readonly sessions = new Map<ProviderId, ProviderSession>()
   private readonly publisher = new EventPublisher<{ event: ConversationEvent }>({ maxBufferedEvents: Number.POSITIVE_INFINITY })
-  private running?: { session: ProviderSession; reply: string; started: ConversationEvent }
+  private running?: { session: ProviderSession; reply: string; tool?: string; started: ConversationEvent }
+  /** Settles when the turn in progress ends. */
+  private idle: Promise<TurnOutcome> = Promise.resolve("completed")
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability) {}
+  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly mcp: KolegaMcpConnection) {}
 
   send(text: string) {
     if (this.running) {
       throw new ORPCError("TURN_RUNNING")
     }
 
-    const choice = this.active()
-    const session = this.session(choice.provider)
-    const prompt = withTranscript(this.database.messages.unseenBy(choice.provider), text)
-    const message = this.database.messages.insert({ role: "user", text, provider: choice.provider })
-    const started: ConversationEvent = { type: "started", message }
-    this.running = { session, reply: "", started }
-    this.publisher.publish("event", started)
-    void this.answer({ ...choice, text: prompt, session })
+    return this.start({ text }).message
+  }
 
-    return message
+  /**
+   * Runs a Rotina as a turn once the turn in progress ends; resolves with its outcome, or with nothing when `claim` skips it.
+   * `claim` runs in the same tick the turn starts, so no user message starts in between and the Rotina it returns is current.
+   */
+  async runRoutine(claim: () => Pick<Routine, "name" | "prompt"> | undefined) {
+    while (this.running) {
+      await this.idle
+    }
+
+    const routine = claim()
+
+    if (!routine) {
+      return undefined
+    }
+
+    return await this.start({ text: routine.prompt, routine: routine.name }).finished
   }
 
   async interrupt() {
@@ -57,7 +84,7 @@ export class Conversation {
   async *events(signal?: AbortSignal) {
     const live = this.publisher.subscribe("event", { signal, maxBufferedEvents: Number.POSITIVE_INFINITY })
     // Taken in the same tick as the subscription, so the snapshot and the live events neither overlap nor leave a gap.
-    const snapshot: ConversationEvent[] = this.running ? [this.running.started, { type: "delta", text: this.running.reply }] : []
+    const snapshot: ConversationEvent[] = this.running ? [this.running.started, { type: "delta", text: this.running.reply }, ...(this.running.tool ? [{ type: "tool" as const, name: this.running.tool }] : [])] : []
 
     yield* snapshot
     yield* live
@@ -114,24 +141,50 @@ export class Conversation {
       executable,
       ...(resume ? { resume } : {}),
       onSession: (id) => this.database.state.set(`session.${provider}`, id),
+      mcp: this.mcp,
     })
     this.sessions.set(provider, session)
 
     return session
   }
 
-  private async answer(turn: ProviderChoice & { text: string; session: ProviderSession }) {
-    const result = await this.observability.span({ name: "provider.turn", attributes: { provider: turn.provider } }, () => turn.session.turn(turn, (text) => {
-      if (this.running) {
-        this.running.reply += text
-      }
+  private start(turn: { text: string; routine?: string }) {
+    const choice = this.active()
+    const session = this.session(choice.provider)
+    const unseen = this.database.messages.unseenBy(choice.provider)
+    const message = this.database.messages.insert({ role: "user", text: turn.text, provider: choice.provider, ...(turn.routine ? { routine: turn.routine } : {}) })
+    const started: ConversationEvent = { type: "started", message }
+    this.running = { session, reply: "", started }
+    this.publisher.publish("event", started)
+    this.idle = this.answer({ ...choice, text: `${clock(new Date())}\n\n${withTranscript(unseen, framed(message))}`, session })
 
-      this.publisher.publish("event", { type: "delta", text })
+    return { message, finished: this.idle }
+  }
+
+  private async answer(turn: ProviderChoice & { text: string; session: ProviderSession }): Promise<TurnOutcome> {
+    const result = await this.observability.span({ name: "provider.turn", attributes: { provider: turn.provider } }, () => turn.session.turn(turn, {
+      delta: (text) => {
+        if (this.running) {
+          this.running.reply += text
+          delete this.running.tool
+        }
+
+        this.publisher.publish("event", { type: "delta", text })
+      },
+      tool: (name) => {
+        if (this.running) {
+          this.running.tool = name
+        }
+
+        this.publisher.publish("event", { type: "tool", name })
+      },
     })).catch((error: unknown): TurnResult => ({ outcome: "failed", error: errorMessage(error) }))
     const reply = this.running?.reply.trim()
     this.running = undefined
     const message = reply ? this.database.messages.insert({ role: "assistant", text: reply, provider: turn.provider }) : undefined
 
     this.publisher.publish("event", { type: "finished", outcome: result.outcome, ...(message ? { message } : {}), ...(result.error ? { error: result.error } : {}) })
+
+    return result.outcome
   }
 }
