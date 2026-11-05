@@ -368,13 +368,14 @@ export class MailWatch {
       const item = await this.deps.request(message, `${gmailApi}/messages/${head.id}?format=full`)
       const from = headerValue(item, "From")
       const body = plainText(item.payload) || item.snippet || "(no text body)"
+      const clipped = body.length > triggerTextLimit ? `${body.slice(0, triggerTextLimit)}…` : body
 
       return {
         source: "email",
         target: senderAddress(from),
         message: {
           from,
-          text: `assunto: ${headerValue(item, "Subject")}\nthreadId: ${item.threadId}\n${body.length > triggerTextLimit ? `${body.slice(0, triggerTextLimit)}…` : body}`,
+          text: Buffer.from(`assunto: ${headerValue(item, "Subject")}\nthreadId: ${item.threadId}\n${clipped}`).toString(),
           sentAt: new Date(Number(item.internalDate ?? Date.now())).toISOString(),
         },
       }
