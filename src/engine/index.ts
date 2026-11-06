@@ -7,6 +7,7 @@ import { parse } from "@src/shared/parse"
 import { Browser } from "./browser"
 import { Conversation, type QueuedTurnEnd } from "./conversation"
 import { openDatabase } from "./database"
+import { Discord } from "./discord"
 import { createEngineRouter } from "./engine-router"
 import { createEngineServer } from "./engine-server"
 import { Google } from "./google/google"
@@ -107,17 +108,19 @@ const routines = new Routines(database, conversation, observability)
 const triggers = new Triggers(database, conversation, observability, () => google.watchMail())
 const browser = new Browser(observability, triggers)
 const whatsapp = new Whatsapp(database, observability, triggers)
+const discord = new Discord(database, observability, triggers)
 const google = new Google(database, observability, triggers, openConsent, environment.KOLEGA_GOOGLE_CLIENT_ID ? { id: environment.KOLEGA_GOOGLE_CLIENT_ID, ...(environment.KOLEGA_GOOGLE_CLIENT_SECRET ? { secret: environment.KOLEGA_GOOGLE_CLIENT_SECRET } : {}) } : undefined)
 // The router is built before the server listens: built after, it costs about 3 ms more of boot.
 const server = createEngineServer({
   token: environment.KOLEGA_ENGINE_TOKEN,
-  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google })),
+  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google, discord })),
   mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => {
     memory.registerTools(mcp)
     routines.registerTools(mcp)
     triggers.registerTools(mcp)
     whatsapp.registerTools(mcp)
     google.registerTools(mcp)
+    discord.registerTools(mcp)
     browser.registerTools(mcp)
   }) },
 })

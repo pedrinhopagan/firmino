@@ -6,6 +6,7 @@ import type { WhatsappStatus } from "@src/shared/whatsapp"
 import type { EngineClient } from "../engine-client"
 import { Button } from "../ui/button"
 import { SettingsRow, SettingsSection, settingsGroupClassName } from "../ui/settings-section"
+import { DiscordConnection } from "./discord-connection"
 import { googleStore } from "./google-events"
 import { whatsappStore } from "./whatsapp-events"
 
@@ -23,6 +24,7 @@ export function Connections({ client }: { client: EngineClient }) {
         <div className={settingsGroupClassName}>
           <WhatsappConnection client={client} />
           <GoogleConnection client={client} />
+          <DiscordConnection client={client} />
         </div>
       </SettingsSection>
       <ZenConnection client={client} />
