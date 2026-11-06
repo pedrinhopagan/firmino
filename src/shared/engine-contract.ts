@@ -1,6 +1,7 @@
 import { eventIterator, oc } from "@orpc/contract"
 import { z } from "zod"
 import { conversationEvent, conversationMessage, favoriteModel, newProviderAccount, providerAccount, providerChoice, providerLoginEvent, providerStatus } from "./conversation"
+import { discordStatus } from "./discord"
 import { googleStatus } from "./google"
 import { externalObservationSpan } from "./observation"
 import { whatsappStatus } from "./whatsapp"
@@ -60,5 +61,12 @@ export const engineContract = {
     connect: oc.output(googleStatus).route({ method: "POST", path: "/google/connect" }),
     /** Cancels a consent in progress, or revokes the connection. */
     disconnect: oc.route({ method: "POST", path: "/google/disconnect" }),
+  },
+  discord: {
+    status: oc.output(discordStatus).route({ method: "GET", path: "/discord/status" }),
+    /** Checks the token the user pasted with Discord and keeps it. */
+    connect: oc.input(z.object({ token: z.string().trim().min(1) })).output(discordStatus).route({ method: "POST", path: "/discord/connect" }),
+    /** Forgets the token. */
+    disconnect: oc.route({ method: "POST", path: "/discord/disconnect" }),
   },
 }

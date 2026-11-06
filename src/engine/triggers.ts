@@ -94,7 +94,7 @@ function prompt(trigger: Trigger, burst: Burst) {
   const lines = burst.messages.map((message) => `[${localMinute(new Date(message.sentAt))}] ${message.from}: ${message.text}`)
   const sending = trigger.canSend
     ? "Envie mensagens ou e-mails só se a instrução acima pedir."
-    : "Este Gatilho não permite enviar mensagens nem e-mails: não responda a ninguém pelo WhatsApp ou pelo Gmail, avise o usuário aqui."
+    : "Este Gatilho não permite enviar mensagens nem e-mails: não responda a ninguém pelo WhatsApp, pelo Gmail ou pelo Discord, avise o usuário aqui."
   const source = sources[trigger.source]
 
   return [
@@ -111,7 +111,7 @@ const saveInput = {
   instruction: z.string().trim().min(1).optional().describe("What you must do when it fires, as an instruction to yourself in the user's words, e.g. \"Me avise e resuma o que a Maria disse.\". Required to create; omit to keep the current one."),
   source: triggerSource.optional().describe("Where it listens: whatsapp (the default) for new WhatsApp messages, email for new e-mail in the Gmail inbox."),
   targets: targets.optional().describe("Only the ones the user named. For whatsapp, the chats, each with its chatId as id and its name from whatsapp_chats. For email, the senders, each with the sender's e-mail address as id (find it with gmail_search when the user gives only a name) or \"@domain\" for every sender of that domain, and a name for who it is. Required to create and when changing source; when changing, the list replaces the current one."),
-  canSend: z.boolean().optional().describe("true only when the user's own instruction asks you to send WhatsApp messages or e-mails when it fires, e.g. to reply. A new Gatilho may not send."),
+  canSend: z.boolean().optional().describe("true only when the user's own instruction asks you to send WhatsApp or Discord messages or e-mails when it fires, e.g. to reply. A new Gatilho may not send."),
   enabled: z.boolean().optional().describe("false pauses the Gatilho, true resumes it. A new Gatilho starts active."),
 }
 
@@ -140,7 +140,7 @@ function text(value: string) {
  */
 export class Triggers {
   private readonly bursts = new Map<string, Burst>()
-  /** The Gatilho whose turn runs now: while it runs, sending a WhatsApp message needs the Gatilho's leave. */
+  /** The Gatilho whose turn runs now: while it runs, sending a WhatsApp or Discord message needs the Gatilho's leave. */
   private running?: Pick<Trigger, "canSend">
   private closed = false
 

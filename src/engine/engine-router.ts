@@ -3,6 +3,7 @@ import { engineContract } from "@src/shared/engine-contract"
 import type { Browser } from "./browser"
 import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
+import type { Discord } from "./discord"
 import type { ObservationReceiver, Observability } from "./observability"
 import type { Google } from "./google/google"
 import type { ProviderAccounts } from "./providers/provider-accounts"
@@ -27,7 +28,7 @@ async function* surfacedStream<T>(stream: AsyncIterable<T>) {
   }
 }
 
-export function createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; accounts: ProviderAccounts; conversation: Conversation; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google }) {
+export function createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google, discord }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; accounts: ProviderAccounts; conversation: Conversation; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google; discord: Discord }) {
   const operations = implement(engineContract).$context<EngineContext>().use(async ({ next, context, path }) => {
     try {
       const operation = path.join(".").toLowerCase()
@@ -90,6 +91,11 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       events: operations.google.events.handler(({ signal }) => surfacedStream(google.events(signal))),
       connect: operations.google.connect.handler(() => google.connect()),
       disconnect: operations.google.disconnect.handler(() => google.disconnect()),
+    },
+    discord: {
+      status: operations.discord.status.handler(() => discord.status()),
+      connect: operations.discord.connect.handler(({ input }) => discord.connect(input.token)),
+      disconnect: operations.discord.disconnect.handler(() => discord.disconnect()),
     },
   })
 }

@@ -1,5 +1,7 @@
-import { BaseWindow, type BrowserWindow, ipcMain, type Session, View, WebContentsView } from "electron"
-import { type BrowserAction, browserBounds, type BrowserBounds, type BrowserReply, type BrowserRequest, type BrowserState } from "@src/shared/browser"
+import { writeFile } from "node:fs/promises"
+import { join } from "node:path"
+import { app, BaseWindow, type BrowserWindow, ipcMain, type Session, View, WebContentsView } from "electron"
+import { browserBounds, type BrowserBounds, type BrowserReply, type BrowserRequest, type BrowserState } from "@src/shared/browser"
 import { parse } from "@src/shared/parse"
 import { BrowserDriver } from "./browser-driver"
 import { importZenSession, listZenIdentities } from "./zen-session"
@@ -149,7 +151,11 @@ export class Browser {
     this.publish()
   }
 
-  private async run(input: BrowserAction, signal: AbortSignal) {
+  private async run(input: BrowserRequest["input"], signal: AbortSignal) {
+    if (input.action === "screenshot") {
+      return this.screenshot()
+    }
+
     if (input.action === "close") {
       if (!this.page) {
         return "The page is already closed."
@@ -185,6 +191,20 @@ export class Browser {
     signal.throwIfAborted()
 
     return result
+  }
+
+  /** Saves the chat window, as the user sees it, to a PNG the agent can attach to a message. */
+  private async screenshot() {
+    const image = await this.window?.webContents.capturePage()
+
+    if (!image || image.isEmpty()) {
+      throw new Error("The Kolega window is closed. Ask the user to open it.")
+    }
+
+    const path = join(app.getPath("temp"), `kolega-${Date.now()}.png`)
+    await writeFile(path, image.toPNG())
+
+    return path
   }
 
   /** Opens the page on first use, once the session is ready. */

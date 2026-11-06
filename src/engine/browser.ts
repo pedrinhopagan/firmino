@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
-import { browserAction, browserKeys, type BrowserReply, browserReply } from "@src/shared/browser"
+import { browserAction, browserKeys, type BrowserReply, browserReply, type BrowserRequest } from "@src/shared/browser"
 import { parse } from "@src/shared/parse"
 import { externalContent } from "./external-content"
 import type { Observability } from "./observability"
@@ -50,6 +50,13 @@ export class Browser {
 
       return { content: [{ type: "text" as const, text: input.action === "close" || input.action === "handoff" ? result : externalContent("pagina", result) }] }
     }))
+    server.registerTool("screenshot", {
+      description: "Save a PNG of the Kolega chat window as the user sees it now, and answer with its file path. To send it, pass the path in discord_send's files.",
+    }, (extra) => this.observability.span({ name: "browser.screenshot" }, async () => {
+      const path = await this.request({ action: "screenshot" }, AbortSignal.any([extra.signal, this.stopping.signal]))
+
+      return { content: [{ type: "text" as const, text: path }] }
+    }))
   }
 
   /** Ends every browser action in flight; Main stops it before its next input. */
@@ -58,7 +65,7 @@ export class Browser {
     this.stopping = new AbortController()
   }
 
-  private async request(input: z.infer<typeof browserAction>, signal: AbortSignal) {
+  private async request(input: BrowserRequest["input"], signal: AbortSignal) {
     const send = process.send?.bind(process)
 
     if (!send) {
