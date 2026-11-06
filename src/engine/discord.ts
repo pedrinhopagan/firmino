@@ -199,11 +199,13 @@ export class Discord {
       }
 
       // A late answer for a token the user already replaced must not end the new connection.
-      if (this.database.state.get("discord.token") === token) {
-        this.forget()
-        this.ended = "O Discord recusou o token. Conecte de novo."
-        this.observability.event({ name: "discord.tokenrejected" })
+      if (this.database.state.get("discord.token") !== token) {
+        throw new Error("The user reconnected Discord during this call. Try again.", { cause: error })
       }
+
+      this.forget()
+      this.ended = "O Discord recusou o token. Conecte de novo."
+      this.observability.event({ name: "discord.tokenrejected" })
 
       throw new Error(`Discord rejected the token. ${notConnected}`, { cause: error })
     })
