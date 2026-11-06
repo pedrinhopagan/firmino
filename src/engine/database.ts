@@ -6,8 +6,8 @@ import { type Routine, storedRoutine } from "./routines"
 import { storedTrigger, type Trigger } from "./triggers"
 import { openWhatsappStore } from "./whatsapp/whatsapp-store"
 
-/** Small persisted values: the provider accounts, the active account, each account's model and session to resume, how many memories each provider session has read, the favorite models, the linked WhatsApp account with its keys, and the Google account with its tokens and the Gmail history id e-mail Gatilhos watch from. */
-type StateKey = "accounts" | "account" | "favorites" | `model.${string}` | `session.${string}` | `memory.read.${string}` | "whatsapp.auth" | "whatsapp.account" | "google.credentials" | "google.account" | "google.historyId" | "zen.identity"
+/** Small persisted values: the provider accounts, the active account, each account's model and session to resume, how many memories each provider session has read, the favorite models, the linked WhatsApp account with its keys, and the Google account with its tokens and the Gmail history id e-mail Gatilhos watch from, and the Discord account with its token. */
+type StateKey = "accounts" | "account" | "favorites" | `model.${string}` | `session.${string}` | `memory.read.${string}` | "whatsapp.auth" | "whatsapp.account" | "google.credentials" | "google.account" | "google.historyId" | "discord.token" | "discord.account" | "zen.identity"
 
 const messagePageSize = 50
 const transcriptLimit = 20
