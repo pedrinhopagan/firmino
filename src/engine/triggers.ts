@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { TurnOutcome } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
+import { type Trigger, trigger, triggerSource, type TriggerTarget, targets } from "@src/shared/trigger"
 import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
 import { externalContent } from "./external-content"
@@ -9,29 +10,11 @@ import type { Observability } from "./observability"
 import { localMinute } from "./routines"
 import type { WhatsappLid } from "./whatsapp/whatsapp-messages"
 
-/** Where a Gatilho listens: a WhatsApp target is a chat, an e-mail target a sender address or a whole domain written as "@domain". */
-const triggerSource = z.enum(["whatsapp", "email"])
-const target = z.strictObject({ id: z.string().trim().includes("@", { message: "Take the chatId from whatsapp_chats, or give an e-mail address or @domain" }), name: z.string().trim().min(1) })
-const targets = z.array(target).min(1)
-const trigger = z.object({
-  id: z.string(),
-  name: z.string().min(1),
-  instruction: z.string().min(1),
-  source: triggerSource,
-  targets,
-  canSend: z.boolean(),
-  status: z.enum(["active", "paused"]),
-  createdAt: z.string(),
-})
-
 /** A Gatilho as stored: the targets column holds JSON and can_send an integer. */
 export const storedTrigger = trigger.extend({
   targets: z.string().transform((value): unknown => JSON.parse(value)).pipe(targets),
   canSend: z.int().transform((value) => value === 1),
 })
-
-export type Trigger = z.infer<typeof trigger>
-type TriggerTarget = z.infer<typeof target>
 
 /** One message from outside, as a source hands it over: `target` is the chat or, for e-mail, the lowercase sender address it came from. */
 export interface TriggerEvent {
@@ -151,7 +134,7 @@ export class Triggers {
     server.registerTool("save_trigger", {
       description: "Create or change one Gatilho: an instruction Kolega runs as a new turn in this conversation when a new WhatsApp message arrives in one of the chats the user named, or a new e-mail arrives from one of the senders the user named. For WhatsApp, find each chat's id with whatsapp_chats first and ask the user when a name matches more than one chat. A Gatilho never listens to every chat or every sender. Give an id to change an existing Gatilho; omit it to create one.",
       inputSchema: saveInput,
-    }, (input) => this.observability.span({ name: "triggers.save" }, () => text(this.save(input))))
+    }, (input) => this.observability.span({ name: "triggers.save" }, () => text(`Gatilho ${input.id ? "changed" : "created"}: ${describe(this.save(input))}`)))
     server.registerTool("list_triggers", {
       description: "List every Gatilho with its id, source, chats or senders, status, whether it may send messages and its instruction.",
     }, () => {
@@ -162,13 +145,36 @@ export class Triggers {
     server.registerTool("remove_trigger", {
       description: "Remove one Gatilho for good.",
       inputSchema: { id: z.string().describe("Id of the Gatilho to remove.") },
-    }, ({ id }) => this.observability.span({ name: "triggers.remove" }, () => {
-      const trigger = this.existing(id)
-      this.database.triggers.remove(trigger.id)
-      this.changed()
+    }, ({ id }) => this.observability.span({ name: "triggers.remove" }, () => text(`Gatilho "${this.remove(id).name}" removed.`)))
+  }
 
-      return text(`Gatilho "${trigger.name}" removed.`)
-    }))
+  /** Creates or changes one Gatilho, as the agent's save_trigger describes; fields given replace the current ones, fields omitted keep them. The settings use it to pause and resume. */
+  save(input: SaveInput) {
+    const current = input.id ? this.existing(input.id) : undefined
+
+    if (!current && (!input.name || !input.instruction || !input.targets)) {
+      throw new Error("Give name, instruction and targets to create a Gatilho")
+    }
+
+    if (current && input.source && input.source !== current.source && !input.targets) {
+      throw new Error("Give the targets of the new source when changing it")
+    }
+
+    const changes = { name: input.name, instruction: input.instruction, source: input.source, targets: input.targets, canSend: input.canSend, status: statusFrom(input.enabled) }
+    const created = { id: crypto.randomUUID(), source: "whatsapp", canSend: false, status: "active", createdAt: new Date().toISOString() }
+    const saved = parse(trigger, { ...created, ...current, ...Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined)) })
+    this.database.triggers.save(saved)
+    this.changed()
+
+    return saved
+  }
+
+  remove(id: string) {
+    const trigger = this.existing(id)
+    this.database.triggers.remove(trigger.id)
+    this.changed()
+
+    return trigger
   }
 
   /** Whether an active Gatilho listens to this chat or sender, so a source can skip fetching a message nobody waits for. */
@@ -330,26 +336,5 @@ export class Triggers {
     }
 
     return trigger
-  }
-
-  /** Fields given replace the current Gatilho's; fields omitted keep them. */
-  private save(input: SaveInput) {
-    const current = input.id ? this.existing(input.id) : undefined
-
-    if (!current && (!input.name || !input.instruction || !input.targets)) {
-      throw new Error("Give name, instruction and targets to create a Gatilho")
-    }
-
-    if (current && input.source && input.source !== current.source && !input.targets) {
-      throw new Error("Give the targets of the new source when changing it")
-    }
-
-    const changes = { name: input.name, instruction: input.instruction, source: input.source, targets: input.targets, canSend: input.canSend, status: statusFrom(input.enabled) }
-    const created = { id: crypto.randomUUID(), source: "whatsapp", canSend: false, status: "active", createdAt: new Date().toISOString() }
-    const saved = parse(trigger, { ...created, ...current, ...Object.fromEntries(Object.entries(changes).filter(([, value]) => value !== undefined)) })
-    this.database.triggers.save(saved)
-    this.changed()
-
-    return `Gatilho ${current ? "changed" : "created"}: ${describe(saved)}`
   }
 }

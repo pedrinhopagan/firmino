@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { z } from "zod"
 import { type EngineTurnNotice, forwardedObservation } from "@src/shared/engine-ipc"
 import { parse } from "@src/shared/parse"
+import { Appointments } from "./appointments"
 import { Browser } from "./browser"
 import { Conversation, type QueuedTurnEnd } from "./conversation"
 import { openDatabase } from "./database"
@@ -104,6 +105,7 @@ const conversation = new Conversation(database, observability, accounts, memory,
   }
 })
 const routines = new Routines(database, conversation, observability)
+const appointments = new Appointments(database, observability, () => process.send?.({ type: "appointment-alert" }))
 // Read when a tool changes a Gatilho, after Google below exists.
 const triggers = new Triggers(database, conversation, observability, () => google.watchMail())
 const browser = new Browser(observability, triggers)
@@ -113,10 +115,11 @@ const google = new Google(database, observability, triggers, openConsent, enviro
 // The router is built before the server listens: built after, it costs about 3 ms more of boot.
 const server = createEngineServer({
   token: environment.KOLEGA_ENGINE_TOKEN,
-  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google, discord })),
+  handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, memory, routines, appointments, triggers, browser, whatsapp, google, discord })),
   mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => {
     memory.registerTools(mcp)
     routines.registerTools(mcp)
+    appointments.registerTools(mcp)
     triggers.registerTools(mcp)
     whatsapp.registerTools(mcp)
     google.registerTools(mcp)
@@ -141,6 +144,7 @@ setImmediate(() => {
     return
   }
 
+  appointments.start()
   google.resume()
   whatsapp.resume().catch((error: unknown) => {
     observability.event({ name: "whatsapp.resumefailed", error })
@@ -156,6 +160,7 @@ async function shutdown() {
 
   stopping = true
   routines.close()
+  appointments.close()
   triggers.close()
   whatsapp.close()
   google.close()

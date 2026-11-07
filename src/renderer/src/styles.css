@@ -73,6 +73,28 @@
   }
 }
 
+@keyframes live-shine {
+  from {
+    background-position: -4.5rem 0, 0 0;
+  }
+
+  to {
+    background-position: calc(100% + 4.5rem) 0, 0 0;
+  }
+}
+
+/* T3 Code's live-tool-shine: a light sweeps across the label of the step in progress. */
+@utility live-shine {
+  @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+    color: transparent;
+    background-image: linear-gradient(to right, transparent, var(--foreground), transparent), linear-gradient(var(--muted-foreground), var(--muted-foreground));
+    background-size: 4.5rem 100%, 100% 100%;
+    background-repeat: no-repeat;
+    background-clip: text;
+    animation: live-shine 2.2s steps(30) infinite;
+  }
+}
+
 @layer components {
   .chat-code code {
     font-family: var(--font-mono);

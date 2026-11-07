@@ -2,6 +2,9 @@ import type { ReactNode } from "react"
 
 /** The card a settings section groups its rows in; each row after the first gets a divider. */
 export const settingsGroupClassName = "flex flex-col rounded-lg border bg-card [&>*+*]:border-t"
+/** A line of status or of error text inside a settings group. */
+export const settingsNoteClassName = "m-0 px-3 py-2.5 text-xs text-muted-foreground"
+export const settingsErrorClassName = "m-0 px-3 py-2.5 text-xs text-destructive-foreground"
 
 export function SettingsSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (

@@ -1,13 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
+import type { StoredMemory } from "@src/shared/memory"
 import type { KolegaDatabase } from "./database"
-
-/** One memory: a single line the agent recorded, with its local date. Its id is its position in the log, from 0. */
-export interface StoredMemory {
-  id: number
-  date: string
-  text: string
-}
 
 /** Memories lo through hi - 1. A block is an aligned power-of-two range, summarized in one line from its two halves. */
 type Block = [lo: number, hi: number]
@@ -112,6 +106,9 @@ function text(value: string) {
  * The agent records and compresses memories through its MCP tools; each provider session reads the memory document when the memory changed since it last read it.
  */
 export class Memory {
+  /** Counts the clears and forgets, so a turn that ran across one knows its session still holds the memories that are gone. */
+  private erasures = 0
+
   constructor(private readonly database: KolegaDatabase) {}
 
   /**
@@ -122,15 +119,34 @@ export class Memory {
     const count = this.database.memories.count()
     const read = thread ? Number(this.database.state.get(`memory.read.${thread}`) ?? 0) : 0
     const document = count > read ? this.document(count) : undefined
+    const erasures = this.erasures
 
     return {
       document,
       read: (after: string) => {
         if (document || after === thread) {
-          this.database.state.set(`memory.read.${after}`, String(this.database.memories.count()))
+          this.database.state.set(`memory.read.${after}`, String(erasures === this.erasures ? this.database.memories.count() : -1))
         }
       },
     }
+  }
+
+  /** Erases every memory. Each session that read the memory reads it again on its next turn, and the document tells it to forget the old one. */
+  clear() {
+    this.erasures++
+    this.database.memories.clear()
+  }
+
+  /** Erases these memories and the summaries over them, which the agent compresses again from what is left. Each session that read the memory reads it again. Returns the ids it erased. */
+  forget(ids: number[]) {
+    const forgotten = this.database.memories.forget(ids)
+
+    if (forgotten.length > 0) {
+      this.erasures++
+      this.settle()
+    }
+
+    return forgotten
   }
 
   registerTools(server: McpServer) {
@@ -153,6 +169,19 @@ export class Memory {
       description: "Search every memory ever recorded, word for word, newest matches last.",
       inputSchema: { pattern: z.string().min(1).describe("A case-insensitive JavaScript regular expression.") },
     }, (input) => text(this.recall(new RegExp(input.pattern, "i"))))
+    server.registerTool("memory_forget", {
+      description: "Erase memories for good when the user asks you to forget something. Find every memory that holds it with memory_recall first, then pass their #ids. The summaries over them are compressed again without them.",
+      inputSchema: { ids: z.array(z.int().min(0)).min(1).describe("The ids memory_recall prints, like 12 for #12.") },
+    }, (input) => {
+      const forgotten = this.forget(input.ids)
+      const missing = input.ids.filter((id) => !forgotten.includes(id))
+
+      return text([
+        forgotten.length > 0 && `Forgot ${forgotten.map((id) => `#${id}`).join(", ")}.`,
+        missing.length > 0 && `No memory to forget at ${missing.map((id) => `#${id}`).join(", ")}.`,
+        this.compression(this.database.memories.count()),
+      ].filter(Boolean).join("\n\n"))
+    })
     server.registerTool("memory_zoom", {
       description: "Open a #lo-hi line of the memory into its two halves, each a summary or, once single, the memory itself.",
       inputSchema: { block: z.string().describe("A block id from the memory, like \"16-31\".") },
@@ -160,11 +189,17 @@ export class Memory {
   }
 
   private document(count: number) {
+    const lines = cover(count).flatMap((block) => this.render(block))
+
+    if (lines.length === 0) {
+      return "Sua memória está vazia: o usuário apagou todas as memórias. Esqueça as que você leu antes."
+    }
+
     const compression = this.compression(count)
 
     return [
-      `Sua memória, da mais antiga para a mais recente (${count} ${count === 1 ? "memória" : "memórias"}):`,
-      cover(count).flatMap((block) => this.render(block)).join("\n"),
+      "Sua memória, da mais antiga para a mais recente. Ela substitui qualquer versão que você leu antes:",
+      lines.join("\n"),
       compression && `Antes de continuar, faça esta compressão pendente:\n\n${compression}`,
     ].filter(Boolean).join("\n\n")
   }
@@ -179,29 +214,54 @@ export class Memory {
 
     const summary = this.database.memories.summary(lo, hi - lo)
 
-    if (summary) {
-      return [`#${blockId(block)} ${summary}`]
+    if (summary === undefined) {
+      return halves(block).flatMap((half) => this.render(half))
     }
 
-    return halves(block).flatMap((half) => this.render(half))
+    // A block that forgetting left with nothing has the summary "".
+    if (!summary) {
+      return []
+    }
+
+    return [`#${blockId(block)} ${summary}`]
   }
 
-  /** The next block to compress and how many follow it. Each level is summarized in order, so its count says how far it got. */
+  /** The next block to compress and how many follow it: the first gap of the finest level that has one, so both halves of a block are summarized before it. */
   private pending(count: number) {
     let next: Block | undefined
     let total = 0
 
     for (let size = 2; size <= count; size *= 2) {
-      const done = this.database.memories.summaries(size)
-      const missing = Math.floor(count / size) - done
+      const level = this.database.memories.level(size)
+      const missing = Math.floor(count / size) - level.done
 
       if (missing > 0) {
-        next ??= [done * size, (done + 1) * size]
+        next ??= [level.next, level.next + size]
         total += missing
       }
     }
 
     return next && { block: next, after: total - 1 }
+  }
+
+  /** What compressing a block reads: its memories when small, else the summaries of its halves. Forgotten memories and empty halves are left out. */
+  private content(block: Block) {
+    const [lo, hi] = block
+
+    if (hi - lo <= rawMax) {
+      return this.database.memories.range(lo, hi).map(line)
+    }
+
+    return halves(block).map((half) => [half, this.summary(half)] as const).filter(([, summary]) => summary).map(([half, summary]) => `#${blockId(half)} ${summary}`)
+  }
+
+  /** Summarizes as "" each pending block that forgetting left with nothing, so the agent is never asked to compress nothing. */
+  private settle() {
+    const count = this.database.memories.count()
+
+    for (let pending = this.pending(count); pending && this.content(pending.block).length === 0; pending = this.pending(count)) {
+      this.database.memories.summarize(pending.block[0], pending.block[1] - pending.block[0], "")
+    }
   }
 
   /** The prompt for the next compression the first `count` memories need. */
@@ -212,8 +272,7 @@ export class Memory {
       return undefined
     }
 
-    const [lo, hi] = pending.block
-    const body = hi - lo <= rawMax ? this.database.memories.range(lo, hi).map(line) : halves(pending.block).map((half) => `#${blockId(half)} ${this.summary(half)}`)
+    const body = this.content(pending.block)
     const left = pending.after === 1 ? "1 compression remains after this one." : `${pending.after} compressions remain after this one.`
 
     return [
@@ -228,7 +287,7 @@ export class Memory {
     const summary = this.database.memories.summary(block[0], block[1] - block[0])
 
     // A level is only compressed after the level below it, so both halves of a pending block exist.
-    if (!summary) {
+    if (summary === undefined) {
       throw new Error(`The summary of #${blockId(block)} is missing.`)
     }
 
@@ -248,7 +307,7 @@ export class Memory {
     if (id !== next) {
       const [lo, hi] = parseBlock(id)
 
-      if (!this.database.memories.summary(lo, hi - lo)) {
+      if (this.database.memories.summary(lo, hi - lo) === undefined) {
         throw new Error(`Wrong block: ${id}. Blocks are compressed in order; the next is ${next}.`)
       }
 
@@ -256,6 +315,7 @@ export class Memory {
     }
 
     this.database.memories.summarize(pending.block[0], pending.block[1] - pending.block[0], summary)
+    this.settle()
 
     return [`${id} saved.`, this.compression(count) ?? "Nothing left to compress."].join("\n\n")
   }

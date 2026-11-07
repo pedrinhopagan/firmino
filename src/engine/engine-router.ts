@@ -1,12 +1,17 @@
 import { implement, ORPCError } from "@orpc/server"
 import { engineContract } from "@src/shared/engine-contract"
+import type { Appointments } from "./appointments"
 import type { Browser } from "./browser"
 import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
 import type { Discord } from "./discord"
+import type { Memory } from "./memory"
 import type { ObservationReceiver, Observability } from "./observability"
 import type { Google } from "./google/google"
+import { imagePath } from "./providers/provider"
 import type { ProviderAccounts } from "./providers/provider-accounts"
+import type { Routines } from "./routines"
+import type { Triggers } from "./triggers"
 import type { Whatsapp } from "./whatsapp/whatsapp"
 
 export interface EngineContext { traceId?: string; spanId?: string }
@@ -20,6 +25,23 @@ function surfaced(error: unknown) {
   return new ORPCError("BAD_REQUEST", { message: error instanceof Error ? error.message : "Unknown error", cause: error })
 }
 
+const imageBytesLimit = 25 * 1024 * 1024
+
+/** Reads a file only when its name says it is an image, so the chat cannot show other files by path. */
+async function localImage(path: string) {
+  const file = Bun.file(path)
+
+  if (!imagePath(path) || !(await file.exists())) {
+    throw new ORPCError("NOT_FOUND", { message: `Imagem não encontrada: ${path}` })
+  }
+
+  if (file.size > imageBytesLimit) {
+    throw new ORPCError("PAYLOAD_TOO_LARGE", { message: "A imagem passa de 25 MB." })
+  }
+
+  return file
+}
+
 async function* surfacedStream<T>(stream: AsyncIterable<T>) {
   try {
     yield* stream
@@ -28,7 +50,7 @@ async function* surfacedStream<T>(stream: AsyncIterable<T>) {
   }
 }
 
-export function createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, browser, whatsapp, google, discord }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; accounts: ProviderAccounts; conversation: Conversation; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google; discord: Discord }) {
+export function createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, memory, routines, appointments, triggers, browser, whatsapp, google, discord }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; accounts: ProviderAccounts; conversation: Conversation; memory: Pick<Memory, "clear" | "forget">; routines: Pick<Routines, "save" | "remove">; appointments: Pick<Appointments, "events" | "complete" | "dismiss" | "remove">; triggers: Pick<Triggers, "save" | "remove">; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google; discord: Discord }) {
   const operations = implement(engineContract).$context<EngineContext>().use(async ({ next, context, path }) => {
     try {
       const operation = path.join(".").toLowerCase()
@@ -56,6 +78,8 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
         browser.interrupt()
         await conversation.interrupt()
       }),
+      answer: operations.conversation.answer.handler(({ input }) => conversation.answer(input.id, input.answers)),
+      image: operations.conversation.image.handler(({ input }) => localImage(input.path)),
     },
     providers: {
       status: operations.providers.status.handler(() => accounts.status()),
@@ -69,6 +93,37 @@ export function createEngineRouter({ startedAt, observability, receiver, databas
       loginCode: operations.providers.loginCode.handler(({ input }) => accounts.loginCode(input.id, input.code)),
       favorites: operations.providers.favorites.handler(() => conversation.favorites()),
       toggleFavorite: operations.providers.toggleFavorite.handler(({ input }) => conversation.toggleFavorite(input)),
+    },
+    memory: {
+      list: operations.memory.list.handler(() => database.memories.all()),
+      forget: operations.memory.forget.handler(({ input }) => {
+        memory.forget([input.id])
+      }),
+      clear: operations.memory.clear.handler(() => memory.clear()),
+    },
+    routines: {
+      list: operations.routines.list.handler(() => database.routines.list()),
+      setEnabled: operations.routines.setEnabled.handler(({ input }) => routines.save(input)),
+      remove: operations.routines.remove.handler(({ input }) => {
+        routines.remove(input.id)
+      }),
+    },
+    appointments: {
+      events: operations.appointments.events.handler(({ signal }) => surfacedStream(appointments.events(signal))),
+      complete: operations.appointments.complete.handler(({ input }) => {
+        appointments.complete(input.id)
+      }),
+      dismiss: operations.appointments.dismiss.handler(({ input }) => appointments.dismiss(input.id)),
+      remove: operations.appointments.remove.handler(({ input }) => {
+        appointments.remove(input.id)
+      }),
+    },
+    triggers: {
+      list: operations.triggers.list.handler(() => database.triggers.list()),
+      setEnabled: operations.triggers.setEnabled.handler(({ input }) => triggers.save(input)),
+      remove: operations.triggers.remove.handler(({ input }) => {
+        triggers.remove(input.id)
+      }),
     },
     zen: {
       identity: operations.zen.identity.handler(() => {

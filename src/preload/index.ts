@@ -4,8 +4,6 @@ import type { Desktop } from "@src/shared/desktop"
 
 const desktop: Desktop = {
   getEngineConnection: () => ipcRenderer.invoke("engine:get-connection"),
-  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
-  closeWindow: () => ipcRenderer.invoke("window:close"),
   getBrowserState: () => ipcRenderer.invoke("browser:state"),
   onBrowserState(listener) {
     const forward = (_event: IpcRendererEvent, state: BrowserState | null) => listener(state)
@@ -19,6 +17,17 @@ const desktop: Desktop = {
   returnBrowserControl: () => ipcRenderer.invoke("browser:return-control"),
   setBrowserBounds: (bounds) => ipcRenderer.invoke("browser:bounds", bounds),
   zenIdentities: () => ipcRenderer.invoke("browser:zen-identities"),
+  resizeToast: (height) => ipcRenderer.invoke("toast:resize", height),
+  closeToast: () => ipcRenderer.invoke("toast:close"),
+  openAppointment: (id) => ipcRenderer.invoke("toast:open-appointment", id),
+  onOpenAppointment(listener) {
+    const forward = (_event: IpcRendererEvent, id: string) => listener(id)
+    ipcRenderer.on("appointment:open", forward)
+
+    return () => {
+      ipcRenderer.off("appointment:open", forward)
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld("desktop", desktop)

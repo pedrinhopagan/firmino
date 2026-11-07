@@ -1,9 +1,13 @@
 import { eventIterator, oc } from "@orpc/contract"
 import { z } from "zod"
-import { conversationEvent, conversationMessage, favoriteModel, newProviderAccount, providerAccount, providerChoice, providerLoginEvent, providerStatus } from "./conversation"
+import { appointment } from "./appointment"
+import { conversationEvent, conversationMessage, favoriteModel, newProviderAccount, providerAccount, providerChoice, providerLoginEvent, providerStatus, questionAnswers } from "./conversation"
 import { discordStatus } from "./discord"
 import { googleStatus } from "./google"
+import { storedMemory } from "./memory"
 import { externalObservationSpan } from "./observation"
+import { routine } from "./routine"
+import { trigger } from "./trigger"
 import { whatsappStatus } from "./whatsapp"
 
 const healthOutput = z.object({
@@ -26,6 +30,10 @@ export const engineContract = {
     send: oc.errors(busy).input(z.object({ text: z.string().trim().min(1) })).output(conversationMessage).route({ method: "POST", path: "/conversation/messages" }),
     events: oc.output(eventIterator(conversationEvent)).route({ method: "GET", path: "/conversation/events" }),
     interrupt: oc.route({ method: "POST", path: "/conversation/interrupt" }),
+    /** Answers the agent's open questions; without answers, dismisses them. */
+    answer: oc.input(z.object({ id: z.string(), answers: questionAnswers.optional() })).route({ method: "POST", path: "/conversation/answer" }),
+    /** An image on this computer that a reply or a step of the work shows, by absolute path. */
+    image: oc.input(z.object({ path: z.string() })).output(z.instanceof(Blob)).route({ method: "GET", path: "/conversation/image" }),
   },
   providers: {
     status: oc.output(z.array(providerStatus)).route({ method: "GET", path: "/providers/status" }),
@@ -43,6 +51,34 @@ export const engineContract = {
     /** The favorite models, in the order the user starred them. */
     favorites: oc.output(z.array(favoriteModel)).route({ method: "GET", path: "/providers/favorites" }),
     toggleFavorite: oc.input(favoriteModel).output(z.array(favoriteModel)).route({ method: "POST", path: "/providers/favorites" }),
+  },
+  memory: {
+    /** Every memory the agent recorded and did not forget, oldest first. */
+    list: oc.output(z.array(storedMemory)).route({ method: "GET", path: "/memory" }),
+    forget: oc.input(z.object({ id: z.int() })).route({ method: "DELETE", path: "/memory" }),
+    clear: oc.route({ method: "POST", path: "/memory/clear" }),
+  },
+  routines: {
+    /** Every Rotina, repeating and one-time, oldest first. */
+    list: oc.output(z.array(routine)).route({ method: "GET", path: "/routines" }),
+    /** Pauses or resumes one Rotina. */
+    setEnabled: oc.input(z.object({ id: z.string(), enabled: z.boolean() })).output(routine).route({ method: "PATCH", path: "/routines" }),
+    remove: oc.input(z.object({ id: z.string() })).route({ method: "DELETE", path: "/routines" }),
+  },
+  appointments: {
+    /** Every Compromisso, by day and time, first as they are and then again after every change. */
+    events: oc.output(eventIterator(z.array(appointment))).route({ method: "GET", path: "/appointments/events" }),
+    complete: oc.input(z.object({ id: z.string() })).route({ method: "POST", path: "/appointments/complete" }),
+    /** Closes the alert outside the app; the card stays until the Compromisso is done. */
+    dismiss: oc.input(z.object({ id: z.string() })).route({ method: "POST", path: "/appointments/dismiss" }),
+    remove: oc.input(z.object({ id: z.string() })).route({ method: "DELETE", path: "/appointments" }),
+  },
+  triggers: {
+    /** Every Gatilho, oldest first. */
+    list: oc.output(z.array(trigger)).route({ method: "GET", path: "/triggers" }),
+    /** Pauses or resumes one Gatilho. */
+    setEnabled: oc.input(z.object({ id: z.string(), enabled: z.boolean() })).output(trigger).route({ method: "PATCH", path: "/triggers" }),
+    remove: oc.input(z.object({ id: z.string() })).route({ method: "DELETE", path: "/triggers" }),
   },
   zen: {
     /** The Zen account the browser imports; absent until the user chooses one. */

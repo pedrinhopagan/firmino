@@ -6,6 +6,7 @@ import { RPCLink } from "@orpc/client/fetch"
 import type { ContractRouterClient } from "@orpc/contract"
 import { resolveAppProfile } from "@src/shared/app-profile"
 import type { engineContract } from "@src/shared/engine-contract"
+import { AppointmentToast } from "./appointment-toast"
 import { Browser } from "./browser/browser"
 import { EngineProcess } from "./engine-process"
 import { compactSize, WindowPlacement, wideSize } from "./window-placement"
@@ -39,11 +40,13 @@ let mainWindow: BrowserWindow | undefined
 let tray: Tray | undefined
 const notifications = new Set<Notification>()
 const placement = new WindowPlacement()
-const placing = app.whenReady().then(() => placement.start({ resourceClass: appProfile.desktopName, directory: app.getPath("userData") })).catch((error: unknown) => {
+const toastTitle = `${appProfile.name}: compromisso`
+const placing = app.whenReady().then(() => placement.start({ resourceClass: appProfile.desktopName, toastCaption: toastTitle, directory: app.getPath("userData") })).catch((error: unknown) => {
   console.warn("KWin placement not loaded; the compositor places the window.", error instanceof Error ? error.message : error)
 })
 let creating: Promise<void> | undefined
 let shownAt = 0
+let hiddenAt = 0
 const activationGraceMs = 500
 
 function showWindow(window: BrowserWindow) {
@@ -59,6 +62,11 @@ function toggleWindow() {
   if (mainWindow?.isVisible() && (mainWindow.isFocused() || Date.now() - shownAt < activationGraceMs)) {
     mainWindow.hide()
 
+    return
+  }
+
+  // A tray click that took the focus already hid the window; it meant to close it, not to open it again.
+  if (Date.now() - hiddenAt < activationGraceMs) {
     return
   }
 
@@ -108,6 +116,15 @@ async function createWindow() {
   mainWindow = window
   browser.attach(window)
   window.once("ready-to-show", () => showWindow(window))
+  // A click outside hides the window, as Alt+K does. Bringing it to the front blurs it too, and so does an alert opening, so a blur right after either is skipped.
+  window.on("blur", () => {
+    if (Date.now() - shownAt < activationGraceMs || toast.openedWithin(activationGraceMs)) {
+      return
+    }
+
+    window.hide()
+    hiddenAt = Date.now()
+  })
   window.once("closed", () => {
     mainWindow = undefined
   })
@@ -123,14 +140,18 @@ async function createWindow() {
     return { action: "deny" }
   })
   window.webContents.on("will-navigate", (event) => event.preventDefault())
+  await loadRenderer(window)
+}
 
+/** Loads the Renderer; a hash picks another root than the conversation. */
+async function loadRenderer(window: BrowserWindow, hash = "") {
   if (process.env.ELECTRON_RENDERER_URL && !app.isPackaged) {
-    await window.loadURL(process.env.ELECTRON_RENDERER_URL)
+    await window.loadURL(`${process.env.ELECTRON_RENDERER_URL}#${hash}`)
 
     return
   }
 
-  await window.loadFile(join(__dirname, "../renderer/index.html"))
+  await window.loadFile(join(__dirname, "../renderer/index.html"), { hash })
 }
 
 function notify(notice: { title: string; body: string }) {
@@ -161,6 +182,20 @@ process.on("SIGUSR2", () => {
 })
 
 const icon = join(app.getAppPath(), "resources", appProfile.icon)
+const toast = new AppointmentToast({
+  title: toastTitle,
+  icon,
+  placement,
+  async load(window, hash) {
+    await placing
+    await loadRenderer(window, hash)
+  },
+  onOpenAppointment(id) {
+    openWindow().then(() => mainWindow?.webContents.send("appointment:open", id)).catch((error: unknown) => {
+      console.error(error)
+    })
+  },
+})
 const browser = new Browser({
   reply: (reply) => void engine.send(reply),
   onHandoff: (reason) => notify({ title: "O Kolega precisa de você", body: reason }),
@@ -190,6 +225,7 @@ const engine = new EngineProcess({
     browser.cancel(id)
   },
   onTurnNotice: notify,
+  onAppointmentAlert: () => toast.open(),
   onUnexpectedExit(error) {
     console.error(error)
     app.exit(1)
@@ -205,17 +241,6 @@ function engineClient() {
 
   return client
 }
-
-function senderWindow(event: Electron.IpcMainInvokeEvent) {
-  if (!mainWindow || event.sender !== mainWindow.webContents) {
-    throw new Error("Untrusted window caller")
-  }
-
-  return mainWindow
-}
-
-ipcMain.handle("window:minimize", (event) => senderWindow(event).minimize())
-ipcMain.handle("window:close", (event) => senderWindow(event).close())
 
 void app.whenReady().then(async () => {
   const starting = engine.start(randomBytes(32).toString("hex"))

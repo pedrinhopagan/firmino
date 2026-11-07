@@ -1,7 +1,7 @@
 import { EventPublisher, ORPCError } from "@orpc/server"
 import { z } from "zod"
-import type { ConversationEvent, ConversationMessage, FavoriteModel, ProviderChoice, TurnOutcome } from "@src/shared/conversation"
-import { favoriteModel } from "@src/shared/conversation"
+import type { ConversationEvent, ConversationMessage, FavoriteModel, ProviderChoice, QuestionAnswers, TurnOutcome, WorkEntry } from "@src/shared/conversation"
+import { favoriteModel, providerEffort } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
 import type { KolegaDatabase } from "./database"
 import type { KolegaMcpConnection } from "./kolega-mcp"
@@ -9,7 +9,7 @@ import type { Memory } from "./memory"
 import type { Observability } from "./observability"
 import { ClaudeSession } from "./providers/claude"
 import { CodexSession } from "./providers/codex"
-import { errorMessage, type ProviderSession, type ProviderSessionOptions, type TurnResult } from "./providers/provider"
+import { errorMessage, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult, type WorkUpdate } from "./providers/provider"
 import type { ProviderAccounts } from "./providers/provider-accounts"
 import { localMinute } from "./routines"
 
@@ -55,13 +55,15 @@ function framed(message: Framed) {
   return message.text
 }
 
-/** Hands a provider the turns another provider answered, so switching keeps the context. */
+/** Hands a provider the turns another provider answered, so switching keeps the context. An answer that only worked has no text to hand. */
 function withTranscript(unseen: Framed[], text: string) {
-  if (unseen.length === 0) {
+  const spoken = unseen.filter((message) => message.text)
+
+  if (spoken.length === 0) {
     return text
   }
 
-  const transcript = unseen.map((message) => `${speaker(message)}: ${framed(message)}`).join("\n\n")
+  const transcript = spoken.map((message) => `${speaker(message)}: ${framed(message)}`).join("\n\n")
 
   return `Mensagens anteriores desta conversa, que você ainda não viu:\n\n${transcript}\n\nMensagem atual:\n\n${text}`
 }
@@ -69,6 +71,17 @@ function withTranscript(unseen: Framed[], text: string) {
 /** The user's local date, time and timezone, so the agent can place "daqui a 2 minutos" and "amanhã às 9h". */
 function clock(now: Date) {
   return `Agora: ${localMinute(now)}, ${now.toLocaleDateString("pt-BR", { weekday: "long" })} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`
+}
+
+/** The turn in progress: what a Renderer that connects mid-turn replays, and the questions waiting for the user. */
+interface RunningTurn {
+  session: ProviderSession
+  started: ConversationEvent
+  reply: string
+  /** Each step of the work by id, in the order it started. */
+  work: Map<string, WorkEntry>
+  /** Closes each open question by id, with the user's answers or with nothing to dismiss it. */
+  asking: Map<string, (answers?: QuestionAnswers) => void>
 }
 
 const sessionTypes = {
@@ -81,7 +94,7 @@ export class Conversation {
   private readonly sessions = new Map<string, ProviderSession>()
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly publisher = new EventPublisher<{ event: ConversationEvent }>({ maxBufferedEvents: Number.POSITIVE_INFINITY })
-  private running?: { session: ProviderSession; reply: string; tool?: string; started: ConversationEvent }
+  private running?: RunningTurn
   /** Settles when the turn in progress ends. */
   private idle: Promise<TurnOutcome> = Promise.resolve("completed")
 
@@ -117,14 +130,37 @@ export class Conversation {
     return await this.start(turn).finished
   }
 
+  /** Dismisses the open questions first, so a provider waiting on them can stop. */
   async interrupt() {
-    await this.running?.session.interrupt()
+    const running = this.running
+
+    if (!running) {
+      return
+    }
+
+    for (const close of running.asking.values()) {
+      close()
+    }
+
+    await running.session.interrupt()
+  }
+
+  /** Answers an open question of the turn in progress; without answers, dismisses it. */
+  answer(id: string, answers?: QuestionAnswers) {
+    const close = this.running?.asking.get(id)
+
+    if (!close) {
+      throw new ORPCError("NOT_FOUND", { message: "Essa pergunta já foi fechada." })
+    }
+
+    close(answers)
   }
 
   async *events(signal?: AbortSignal) {
     const live = this.publisher.subscribe("event", { signal, maxBufferedEvents: Number.POSITIVE_INFINITY })
+    const running = this.running
     // Taken in the same tick as the subscription, so the snapshot and the live events neither overlap nor leave a gap.
-    const snapshot: ConversationEvent[] = this.running ? [this.running.started, { type: "delta", text: this.running.reply }, ...(this.running.tool ? [{ type: "tool" as const, name: this.running.tool }] : [])] : []
+    const snapshot: ConversationEvent[] = running ? [running.started, { type: "delta", text: running.reply }, ...Array.from(running.work.values(), (entry) => ({ type: "work" as const, entry }))] : []
 
     yield* snapshot
     yield* live
@@ -141,8 +177,10 @@ export class Conversation {
     }
 
     const model = this.database.state.get(`model.${account.id}`)
+    const storedEffort = this.database.state.get(`effort.${JSON.stringify([account.id, model ?? null])}`)
+    const effort = storedEffort === undefined ? undefined : parse(providerEffort, storedEffort)
 
-    return { account: account.id, ...(model ? { model } : {}) }
+    return { account: account.id, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }
   }
 
   choose(choice: ProviderChoice) {
@@ -154,6 +192,10 @@ export class Conversation {
     this.accounts.launch(choice.account)
     this.database.state.set("account", choice.account)
     this.database.state.set(`model.${choice.account}`, choice.model)
+
+    if (choice.effort !== undefined) {
+      this.database.state.set(`effort.${JSON.stringify([choice.account, choice.model ?? null])}`, choice.effort)
+    }
 
     return this.active()
   }
@@ -219,33 +261,50 @@ export class Conversation {
     const unseen = this.database.messages.unseenBy(account.id)
     const memory = this.memory.forTurn(this.database.state.get(`session.${account.id}`))
     const message = this.database.messages.insert({ ...turn, role: "user", provider: account.provider, account: account.id })
-    const started: ConversationEvent = { type: "started", message }
-    this.running = { session, reply: "", started }
-    this.publisher.publish("event", started)
-    this.idle = this.answer({ ...choice, provider: account.provider, text: [clock(new Date()), memory.document, withTranscript(unseen, framed(message))].filter(Boolean).join("\n\n"), session, memory, origin: message })
+    const running: RunningTurn = { session, started: { type: "started", message }, reply: "", work: new Map(), asking: new Map() }
+    this.running = running
+    this.publisher.publish("event", running.started)
+    this.idle = this.run({ ...choice, provider: account.provider, text: [clock(new Date()), memory.document, withTranscript(unseen, framed(message))].filter(Boolean).join("\n\n"), memory, origin: message }, running)
 
     return { message, finished: this.idle }
   }
 
-  private async answer(turn: ProviderChoice & Pick<ConversationMessage, "provider"> & { text: string; session: ProviderSession; memory: Pick<ReturnType<Memory["forTurn"]>, "read">; origin: Pick<ConversationMessage, "routine" | "trigger"> }): Promise<TurnOutcome> {
-    const result = await this.observability.span({ name: "provider.turn", attributes: { provider: turn.provider } }, () => turn.session.turn(turn, {
-      delta: (text) => {
-        if (this.running) {
-          this.running.reply += text
-          delete this.running.tool
-        }
+  /** Streams the turn's text and work to every Renderer, keeping what one that connects later replays. */
+  private listener(running: RunningTurn): TurnListener {
+    const place = (update: WorkUpdate) => {
+      const entry = { ...update, at: running.work.get(update.id)?.at ?? running.reply.length }
+      running.work.set(entry.id, entry)
+      this.publisher.publish("event", { type: "work", entry })
+    }
 
+    return {
+      delta: (text) => {
+        running.reply += text
         this.publisher.publish("event", { type: "delta", text })
       },
-      tool: (name) => {
-        if (this.running) {
-          this.running.tool = name
-        }
+      work: place,
+      ask: (id, questions) => {
+        const asked = Promise.withResolvers<QuestionAnswers | undefined>()
+        place({ id, kind: "question", status: "running", questions })
+        running.asking.set(id, (answers) => {
+          running.asking.delete(id)
+          place({ id, kind: "question", status: "completed", questions, ...(answers ? { answers } : {}) })
+          asked.resolve(answers)
+        })
 
-        this.publisher.publish("event", { type: "tool", name })
+        return asked.promise
       },
-    })).catch((error: unknown): TurnResult => ({ outcome: "failed", error: errorMessage(error) }))
-    const reply = this.running?.reply.trim()
+    }
+  }
+
+  private async run(turn: ProviderChoice & Pick<ConversationMessage, "provider"> & { text: string; memory: Pick<ReturnType<Memory["forTurn"]>, "read">; origin: Pick<ConversationMessage, "routine" | "trigger"> }, running: RunningTurn): Promise<TurnOutcome> {
+    const result = await this.observability.span({ name: "provider.turn", attributes: { provider: turn.provider } }, () => running.session.turn(turn, this.listener(running)))
+      .catch((error: unknown): TurnResult => ({ outcome: "failed", error: errorMessage(error) }))
+
+    for (const close of running.asking.values()) {
+      close()
+    }
+
     this.running = undefined
     this.closeWhenIdle(turn.account, turn.provider)
     const thread = this.database.state.get(`session.${turn.account}`)
@@ -255,7 +314,12 @@ export class Conversation {
       turn.memory.read(thread)
     }
 
-    const message = reply ? this.database.messages.insert({ role: "assistant", text: reply, provider: turn.provider, account: turn.account }) : undefined
+    const reply = running.reply.trim()
+    // Trimming the start moves the text the work points into.
+    const trimmedStart = running.reply.length - running.reply.trimStart().length
+    const settled = result.outcome === "completed" ? "completed" : "failed"
+    const work = Array.from(running.work.values(), (entry) => ({ ...entry, status: entry.status === "running" ? settled : entry.status, at: Math.min(Math.max(0, entry.at - trimmedStart), reply.length) }))
+    const message = reply || work.length > 0 ? this.database.messages.insert({ role: "assistant", text: reply, provider: turn.provider, account: turn.account, ...(work.length > 0 ? { work } : {}) }) : undefined
 
     this.publisher.publish("event", { type: "finished", outcome: result.outcome, ...(message ? { message } : {}), ...(result.error ? { error: result.error } : {}) })
 

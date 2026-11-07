@@ -7,10 +7,9 @@ import { chatQueries } from "../chat/chat-queries"
 import type { EngineClient } from "../engine-client"
 import { Button } from "../ui/button"
 import { IconButton } from "../ui/icon-button"
-import { SettingsSection, settingsGroupClassName } from "../ui/settings-section"
+import { SettingsSection, settingsErrorClassName, settingsGroupClassName, settingsNoteClassName } from "../ui/settings-section"
+import { Switch } from "../ui/switch"
 
-const noteClassName = "m-0 px-3 py-2.5 text-xs text-muted-foreground"
-const errorClassName = "m-0 px-3 py-2.5 text-xs text-destructive-foreground"
 const inputClassName = "h-8 min-w-0 flex-1 rounded-md border bg-background px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 /** Each provider's default account has the provider's id; it can be turned off, not removed. */
 const defaultAccountIds = new Set<string>(["codex", "claude"])
@@ -33,11 +32,11 @@ export function ProviderAccounts({ client }: { client: EngineClient }) {
   return (
     <SettingsSection title="Contas" description="Cada conta usa a própria pasta do Codex ou do Claude. As contas padrão usam a mesma pasta do terminal e do T3 Code, então o login vale nos dois.">
       <div className={settingsGroupClassName}>
-        {statuses.isPending && <p className={noteClassName}>Verificando as contas…</p>}
-        {statuses.error && <p className={errorClassName} role="alert">{statuses.error.message}</p>}
+        {statuses.isPending && <p className={settingsNoteClassName}>Verificando as contas…</p>}
+        {statuses.error && <p className={settingsErrorClassName} role="alert">{statuses.error.message}</p>}
         {statuses.data?.map((status) => <AccountRow key={status.account.id} client={client} status={status} />)}
         {adding && <AddAccount client={client} onDone={() => setAdding(false)} />}
-        {importT3.error && <p className={errorClassName} role="alert">{importT3.error.message}</p>}
+        {importT3.error && <p className={settingsErrorClassName} role="alert">{importT3.error.message}</p>}
       </div>
       {!adding && (
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -77,17 +76,9 @@ function AccountRow({ client, status }: { client: EngineClient; status: Provider
         <Switch label={`Usar a conta ${account.name}`} checked={account.enabled} disabled={update.isPending} onChange={(enabled) => update.mutate(enabled)} />
       </div>
       {login.running && <LoginInProgress client={client} provider={account.provider} id={account.id} url={login.url} onCancel={login.cancel} />}
-      {login.error && <p className={errorClassName} role="alert">{login.error}</p>}
-      {error && <p className={errorClassName} role="alert">{error.message}</p>}
+      {login.error && <p className={settingsErrorClassName} role="alert">{login.error}</p>}
+      {error && <p className={settingsErrorClassName} role="alert">{error.message}</p>}
     </div>
-  )
-}
-
-function Switch({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <button type="button" role="switch" className="group inline-flex h-5 w-9 shrink-0 items-center rounded-full bg-input p-0.5 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 aria-checked:bg-primary" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)}>
-      <span className="size-4 rounded-full bg-background shadow-xs transition-transform duration-150 group-aria-checked:translate-x-4 motion-reduce:transition-none" aria-hidden="true" />
-    </button>
   )
 }
 

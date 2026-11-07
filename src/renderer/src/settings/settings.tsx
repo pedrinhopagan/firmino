@@ -1,38 +1,28 @@
-import { CheckIcon, ComputerDesktopIcon, MoonIcon, SunIcon } from "@heroicons/react/16/solid"
+import { ArrowPathIcon, BoltIcon, CalendarIcon, CheckCircleIcon, CheckIcon, ComputerDesktopIcon, CpuChipIcon, LightBulbIcon, LinkIcon, MoonIcon, SunIcon, SwatchIcon } from "@heroicons/react/16/solid"
 import { useStore } from "@tanstack/react-store"
-import { useState } from "react"
 import { Connections } from "../connections/connections"
-import type { EngineClient } from "../engine-client"
 import { setTheme, setThemeMode, type ThemeMode, themeModes, themeStore, themeVariant } from "../theme/theme"
 import { themes } from "../theme/theme-palettes"
 import { SettingsSection } from "../ui/settings-section"
+import { Appointments } from "./appointments"
+import { MemorySettings } from "./memory-settings"
 import { ProviderAccounts } from "./provider-accounts"
+import { Routines, Schedules } from "./routines"
+import { Triggers } from "./triggers"
 
-const sections = [{ id: "appearance", label: "Aparência" }, { id: "providers", label: "Fornecedores" }, { id: "connections", label: "Conexões" }] as const
-
-/** The settings route: one tab per section, the way T3 Code lists its settings pages. */
-export function Settings({ client }: { client: EngineClient }) {
-  const [section, setSection] = useState<(typeof sections)[number]["id"]>("appearance")
-
-  return (
-    <div className="flex min-h-0 w-full flex-1 flex-col">
-      <nav className="flex shrink-0 gap-1 border-b px-3 py-2" aria-label="Seções">
-        {sections.map(({ id, label }) => (
-          <button key={id} type="button" className="h-7 rounded-md px-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-accent aria-[current=page]:text-foreground" aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>
-            {label}
-          </button>
-        ))}
-      </nav>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-140 flex-col gap-6 px-3 pt-4 pb-6">
-          {section === "appearance" && <Appearance />}
-          {section === "providers" && <ProviderAccounts client={client} />}
-          {section === "connections" && <Connections client={client} />}
-        </div>
-      </div>
-    </div>
-  )
+/** Every page the side menu opens, in the order it lists them. */
+export const settingsPages = {
+  appearance: { label: "Aparência", description: "Modo e tema", icon: SwatchIcon, Page: Appearance },
+  providers: { label: "Fornecedores", description: "Contas do Codex e do Claude", icon: CpuChipIcon, Page: ProviderAccounts },
+  connections: { label: "Conexões", description: "WhatsApp, Google e navegador", icon: LinkIcon, Page: Connections },
+  memory: { label: "Memória", description: "O que o Kolega anotou sobre você", icon: LightBulbIcon, Page: MemorySettings },
+  appointments: { label: "Compromissos", description: "O que você precisa fazer num dia", icon: CheckCircleIcon, Page: Appointments },
+  routines: { label: "Rotinas", description: "Tarefas que se repetem", icon: ArrowPathIcon, Page: Routines },
+  schedules: { label: "Agendamentos", description: "Tarefas marcadas para um horário", icon: CalendarIcon, Page: Schedules },
+  triggers: { label: "Gatilhos", description: "Ações quando chega uma mensagem", icon: BoltIcon, Page: Triggers },
 }
+
+export type SettingsPage = keyof typeof settingsPages
 
 const modeOptions: Record<ThemeMode, { label: string; icon: typeof SunIcon }> = {
   system: { label: "Sistema", icon: ComputerDesktopIcon },

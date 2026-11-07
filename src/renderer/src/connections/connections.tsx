@@ -5,7 +5,7 @@ import type { GoogleStatus } from "@src/shared/google"
 import type { WhatsappStatus } from "@src/shared/whatsapp"
 import type { EngineClient } from "../engine-client"
 import { Button } from "../ui/button"
-import { SettingsRow, SettingsSection, settingsGroupClassName } from "../ui/settings-section"
+import { SettingsRow, SettingsSection, settingsErrorClassName, settingsGroupClassName, settingsNoteClassName } from "../ui/settings-section"
 import { DiscordConnection } from "./discord-connection"
 import { googleStore } from "./google-events"
 import { whatsappStore } from "./whatsapp-events"
@@ -32,9 +32,6 @@ export function Connections({ client }: { client: EngineClient }) {
   )
 }
 
-const noteClassName = "m-0 px-3 py-2.5 text-xs text-muted-foreground"
-const errorClassName = "m-0 px-3 py-2.5 text-xs text-destructive-foreground"
-
 function account(status: WhatsappStatus) {
   if ((status.state === "connected" || status.state === "connecting") && status.account) {
     return ` · +${status.account}`
@@ -59,8 +56,8 @@ function WhatsappConnection({ client }: { client: EngineClient }) {
           ? <Button variant="secondary" disabled={link.isPending} onClick={() => link.mutate()}>Conectar</Button>
           : <Button variant="danger" disabled={unlink.isPending} onClick={() => unlink.mutate()}>{status.state === "linking" ? "Cancelar" : "Desconectar"}</Button>}
       </SettingsRow>
-      {status.state === "unlinked" && status.error && <p className={errorClassName} role="alert">{status.error}</p>}
-      {(link.error ?? unlink.error) && <p className={errorClassName} role="alert">{(link.error ?? unlink.error)?.message}</p>}
+      {status.state === "unlinked" && status.error && <p className={settingsErrorClassName} role="alert">{status.error}</p>}
+      {(link.error ?? unlink.error) && <p className={settingsErrorClassName} role="alert">{(link.error ?? unlink.error)?.message}</p>}
       {status.state === "linking" && <LinkCode code={status.qr} />}
     </div>
   )
@@ -68,7 +65,7 @@ function WhatsappConnection({ client }: { client: EngineClient }) {
 
 function LinkCode({ code }: { code?: string }) {
   if (!code) {
-    return <p className={noteClassName}>Gerando o código…</p>
+    return <p className={settingsNoteClassName}>Gerando o código…</p>
   }
 
   return (
@@ -106,9 +103,9 @@ function GoogleConnection({ client }: { client: EngineClient }) {
           ? <Button variant="secondary" disabled={connect.isPending} onClick={() => connect.mutate()}>Conectar</Button>
           : <Button variant="danger" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>{status.state === "connecting" ? "Cancelar" : "Desconectar"}</Button>}
       </SettingsRow>
-      {status.state === "connecting" && <p className={noteClassName}>A página de permissão do Google abriu no seu navegador.</p>}
-      {status.state === "disconnected" && status.error && <p className={errorClassName} role="alert">{status.error}</p>}
-      {(connect.error ?? disconnect.error) && <p className={errorClassName} role="alert">{(connect.error ?? disconnect.error)?.message}</p>}
+      {status.state === "connecting" && <p className={settingsNoteClassName}>A página de permissão do Google abriu no seu navegador.</p>}
+      {status.state === "disconnected" && status.error && <p className={settingsErrorClassName} role="alert">{status.error}</p>}
+      {(connect.error ?? disconnect.error) && <p className={settingsErrorClassName} role="alert">{(connect.error ?? disconnect.error)?.message}</p>}
     </div>
   )
 }
@@ -129,9 +126,9 @@ function ZenConnection({ client }: { client: EngineClient }) {
   return (
     <SettingsSection title="Navegador" description="O navegador do Kolega entra nos sites com os cookies da conta do Zen escolhida. Ele lê uma cópia e nunca altera o Zen.">
       <div className={settingsGroupClassName}>
-        {identities.isPending && <p className={noteClassName}>Lendo o perfil do Zen…</p>}
-        {identities.error && <p className={errorClassName} role="alert">Não foi possível ler o perfil do Zen: {identities.error.message}</p>}
-        {identities.data?.length === 0 && <p className={noteClassName}>Nenhuma conta do Zen com cookies neste computador.</p>}
+        {identities.isPending && <p className={settingsNoteClassName}>Lendo o perfil do Zen…</p>}
+        {identities.error && <p className={settingsErrorClassName} role="alert">Não foi possível ler o perfil do Zen: {identities.error.message}</p>}
+        {identities.data?.length === 0 && <p className={settingsNoteClassName}>Nenhuma conta do Zen com cookies neste computador.</p>}
         {!!identities.data?.length && (
           <fieldset className="m-0 flex flex-col border-0 p-0 [&>label+label]:border-t">
             <legend className="sr-only">Conta do Zen</legend>
@@ -147,8 +144,8 @@ function ZenConnection({ client }: { client: EngineClient }) {
             ))}
           </fieldset>
         )}
-        {choose.isSuccess && <p className={noteClassName} role="status">O Kolega usa esta conta na próxima vez que importar os cookies do Zen.</p>}
-        {choose.error && <p className={errorClassName} role="alert">{choose.error.message}</p>}
+        {choose.isSuccess && <p className={settingsNoteClassName} role="status">O Kolega usa esta conta na próxima vez que importar os cookies do Zen.</p>}
+        {choose.error && <p className={settingsErrorClassName} role="alert">{choose.error.message}</p>}
       </div>
     </SettingsSection>
   )

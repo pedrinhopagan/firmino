@@ -2,35 +2,17 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { TurnOutcome } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
+import { type Frequency, frequency, type Routine, routine, time, weekday, weekdays } from "@src/shared/routine"
 import type { Conversation } from "./conversation"
 import type { KolegaDatabase } from "./database"
 import type { Observability } from "./observability"
 
-const weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const
 const workdays = weekdays.slice(0, 5)
-const weekday = z.enum(weekdays)
-const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
-const chosenDays = z.array(weekday).min(1)
-const frequency = z.discriminatedUnion("form", [
-  z.strictObject({ form: z.literal("interval"), everyMinutes: z.int().min(1), days: chosenDays, startTime: time, endTime: time }),
-  z.strictObject({ form: z.literal("fixed-time"), days: chosenDays, times: z.array(time).min(1).transform((times) => [...new Set(times)].toSorted()) }),
-  z.strictObject({ form: z.literal("once"), at: z.iso.datetime() }),
-]).refine((value) => value.form !== "interval" || value.endTime >= value.startTime, { message: "endTime must not be before startTime", path: ["endTime"] })
-const status = z.enum(["active", "paused", "completed", "failed"])
 
 /** A Rotina as stored: the frequency column holds JSON. */
-export const storedRoutine = z.object({
-  id: z.string(),
-  name: z.string(),
-  prompt: z.string(),
+export const storedRoutine = routine.extend({
   frequency: z.string().transform((value): unknown => JSON.parse(value)).pipe(frequency),
-  status,
-  nextRunAt: z.string().nullable(),
-  createdAt: z.string(),
 })
-
-export type Routine = z.infer<typeof storedRoutine>
-type Frequency = Routine["frequency"]
 
 const minute = 60_000
 /** The timer re-arms at least this often, so a clock change or a suspended laptop delays a Rotina by an hour at most. */
@@ -250,9 +232,9 @@ export class Routines {
 
   registerTools(server: McpServer) {
     server.registerTool("save_routine", {
-      description: "Create or change one Rotina: a named instruction that Kolega runs for you on a schedule, as a new turn in this conversation. Use it for reminders and for tasks the user wants done later or repeatedly. Give an id to change an existing Rotina; omit it to create one. Times are the user's local time.",
+      description: "Create or change one Rotina: a named instruction that Kolega runs for you on a schedule, as a new turn in this conversation. Use it for tasks the user wants you to do later or repeatedly. For something the user must do or attend on a day, use save_appointment instead. Give an id to change an existing Rotina; omit it to create one. Times are the user's local time.",
       inputSchema: saveInput,
-    }, (input) => this.observability.span({ name: "routines.save" }, () => text(this.save(input))))
+    }, (input) => this.observability.span({ name: "routines.save" }, () => text(`Rotina ${input.id ? "changed" : "created"}: ${describe(this.save(input))}`)))
     server.registerTool("list_routines", {
       description: "List every Rotina with its id, schedule, status and next run in local time.",
     }, () => {
@@ -263,13 +245,34 @@ export class Routines {
     server.registerTool("remove_routine", {
       description: "Remove one Rotina for good.",
       inputSchema: { id: z.string().describe("Id of the Rotina to remove.") },
-    }, ({ id }) => this.observability.span({ name: "routines.remove" }, () => {
-      const routine = this.existing(id)
-      this.database.routines.remove(routine.id)
-      this.schedule()
+    }, ({ id }) => this.observability.span({ name: "routines.remove" }, () => text(`Rotina "${this.remove(id).name}" removed.`)))
+  }
 
-      return text(`Rotina "${routine.name}" removed.`)
-    }))
+  /** Creates or changes one Rotina, as the agent's save_routine describes; the settings use it to pause and resume. */
+  save(input: SaveInput) {
+    const current = input.id ? this.existing(input.id) : undefined
+    const name = input.name ?? current?.name
+    const prompt = input.prompt ?? current?.prompt
+
+    if (!name || !prompt) {
+      throw new Error("Give name and prompt to create a Rotina")
+    }
+
+    const now = new Date()
+    const routine = { id: current?.id ?? crypto.randomUUID(), name, prompt, frequency: frequencyFrom(input, current), status: statusFrom(input.enabled, current), createdAt: current?.createdAt ?? now.toISOString() }
+    const saved: Routine = { ...routine, nextRunAt: routine.status === "active" ? nextRun(routine.frequency, now).toISOString() : null }
+    this.database.routines.save(saved)
+    this.schedule()
+
+    return saved
+  }
+
+  remove(id: string) {
+    const routine = this.existing(id)
+    this.database.routines.remove(routine.id)
+    this.schedule()
+
+    return routine
   }
 
   close() {
@@ -285,24 +288,6 @@ export class Routines {
     }
 
     return routine
-  }
-
-  private save(input: SaveInput) {
-    const current = input.id ? this.existing(input.id) : undefined
-    const name = input.name ?? current?.name
-    const prompt = input.prompt ?? current?.prompt
-
-    if (!name || !prompt) {
-      throw new Error("Give name and prompt to create a Rotina")
-    }
-
-    const now = new Date()
-    const routine = { id: current?.id ?? crypto.randomUUID(), name, prompt, frequency: frequencyFrom(input, current), status: statusFrom(input.enabled, current), createdAt: current?.createdAt ?? now.toISOString() }
-    const saved: Routine = { ...routine, nextRunAt: routine.status === "active" ? nextRun(routine.frequency, now).toISOString() : null }
-    this.database.routines.save(saved)
-    this.schedule()
-
-    return `Rotina ${current ? "changed" : "created"}: ${describe(saved)}`
   }
 
   private schedule() {

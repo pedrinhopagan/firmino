@@ -19,6 +19,11 @@ export const engineTurnNoticeMessage = z.object({
   body: z.string(),
 })
 
+/** Asks Main to open the Compromissos that alert now, outside the app. */
+export const engineAppointmentAlertMessage = z.object({
+  type: z.literal("appointment-alert"),
+})
+
 const forwardedObservationEvent = z.strictObject({
   type: z.literal("observation"),
   name: observationName,
