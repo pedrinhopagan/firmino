@@ -1,5 +1,5 @@
 import { hashKey, type QueryClient } from "@tanstack/react-query"
-import type { ConversationEvent, ConversationMessage } from "@src/shared/conversation"
+import type { ConversationEvent, ConversationMessage, WorkEntry } from "@src/shared/conversation"
 import type { EngineClient } from "../engine-client"
 import { chatQueries } from "./chat-queries"
 import { chatStore } from "./chat-store"
@@ -9,6 +9,23 @@ const newestPageLimit = 100
 const trimmedPageSize = 50
 const minFlushMs = 100
 const flushCharsPerMs = 100
+
+/** The turn's work with each newer step in place of the one it updates, and new steps at the end. */
+function placed(work: WorkEntry[], updates: Iterable<WorkEntry>) {
+  const next = [...work]
+
+  for (const update of updates) {
+    const index = next.findIndex((entry) => entry.id === update.id)
+
+    if (index === -1) {
+      next.push(update)
+    } else {
+      next[index] = update
+    }
+  }
+
+  return next
+}
 
 /** Subscribes once to the Engine's conversation stream and keeps the message list and the streaming reply current. */
 export function subscribeChatEvents({ client, queryClient }: { client: EngineClient; queryClient: QueryClient }) {
@@ -66,27 +83,41 @@ export function subscribeChatEvents({ client, queryClient }: { client: EngineCli
   })
 
   let unflushed = ""
+  const unflushedWork = new Map<string, WorkEntry>()
   let flushTimer: ReturnType<typeof setTimeout> | undefined
 
-  /** Moves buffered reply text into the store, so the reply's Markdown is parsed once per flush instead of once per delta. */
+  /** Moves buffered reply text and work into the store, so the reply's Markdown is parsed once per flush instead of once per delta. */
   function flush() {
     clearTimeout(flushTimer)
     flushTimer = undefined
 
-    if (!unflushed) {
+    if (!unflushed && unflushedWork.size === 0) {
       return
     }
 
     const text = unflushed
+    const work = [...unflushedWork.values()]
     unflushed = ""
-    chatStore.setState((state) => ({ reply: (state.reply ?? "") + text }))
+    unflushedWork.clear()
+    chatStore.setState((state) => state.turn ? { ...state, turn: { ...state.turn, reply: state.turn.reply + text, work: placed(state.turn.work, work) } } : state)
+  }
+
+  function flushSoon() {
+    // ponytail: the whole reply is parsed again on each flush; the interval grows with its length to keep that near a tenth of the main thread.
+    flushTimer ??= setTimeout(flush, Math.max(minFlushMs, (chatStore.state.turn?.reply.length ?? 0) / flushCharsPerMs))
   }
 
   function handle(event: ConversationEvent) {
     if (event.type === "delta") {
       unflushed += event.text
-      // ponytail: the whole reply is parsed again on each flush; the interval grows with its length to keep that near a tenth of the main thread.
-      flushTimer ??= setTimeout(flush, Math.max(minFlushMs, (chatStore.state.reply?.length ?? 0) / flushCharsPerMs))
+      flushSoon()
+
+      return
+    }
+
+    if (event.type === "work") {
+      unflushedWork.set(event.entry.id, event.entry)
+      flushSoon()
 
       return
     }
@@ -95,13 +126,7 @@ export function subscribeChatEvents({ client, queryClient }: { client: EngineCli
 
     if (event.type === "started") {
       append([event.message])
-      chatStore.setState(() => ({ reply: "" }))
-
-      return
-    }
-
-    if (event.type === "tool") {
-      chatStore.setState((state) => ({ ...state, tool: event.name }))
+      chatStore.setState(() => ({ turn: { startedAt: event.message.createdAt, reply: "", work: [] } }))
 
       return
     }
@@ -124,6 +149,7 @@ export function subscribeChatEvents({ client, queryClient }: { client: EngineCli
       }
 
       unflushed = ""
+      unflushedWork.clear()
       flush()
       chatStore.setState(() => ({}))
       await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs))

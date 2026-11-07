@@ -2,13 +2,15 @@ import { ArrowPathIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, Magnifying
 import { StarIcon } from "@heroicons/react/24/outline"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
-import { type KeyboardEvent, type ReactNode, type ToggleEvent, useId, useRef, useState } from "react"
+import { type KeyboardEvent, type ReactNode, type ToggleEvent, useEffect, useId, useRef, useState } from "react"
 import type { FavoriteModel, ProviderChoice, ProviderId, ProviderModel, ProviderStatus } from "@src/shared/conversation"
 import type { EngineClient } from "../engine-client"
 import { IconButton } from "../ui/icon-button"
+import { moveMenuFocus } from "../ui/menu-focus"
 import { Tooltip, useTooltip } from "../ui/tooltip"
 import { chatQueries } from "./chat-queries"
 import { chatStore } from "./chat-store"
+import { EffortOptions, effortLabel } from "./effort-options"
 
 export const providerNames: Record<ProviderId, string> = { codex: "Codex", claude: "Claude" }
 
@@ -45,43 +47,28 @@ export function statusLabel(status: ProviderStatus) {
   return [status.email ?? "Conectado", status.plan].filter(Boolean).join(" · ")
 }
 
-/** Up and down move between the models, as in a menu. */
-function moveFocus(event: KeyboardEvent<HTMLElement>) {
-  const step = { ArrowDown: 1, ArrowUp: -1 }[event.key]
-
-  if (!step) {
-    return
-  }
-
-  event.preventDefault()
-  const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("[role^=menuitem]:not(:disabled)")]
-  const next = items.findIndex((item) => item === document.activeElement) + step
-  items.at(next % items.length)?.focus()
-}
-
-
-/** The provider and model that answer, as T3 Code's model picker: a quiet trigger in the composer that opens the menu above it. Both stay disabled while a turn runs. */
+/** One compact control opens the model list and its reasoning levels side by side. */
 export function ProviderPicker({ client }: { client: EngineClient }) {
   const queryClient = useQueryClient()
-  const statuses = useQuery(chatQueries.providers(client))
-  const active = useQuery(chatQueries.active(client))
-  const running = useStore(chatStore, (state) => state.reply !== undefined)
+  const { data: statuses } = useQuery(chatQueries.providers(client))
+  const { data: choice } = useQuery(chatQueries.active(client))
+  const running = useStore(chatStore, (state) => state.turn !== undefined)
   const id = useId()
   const anchorName = `--provider-picker-${id.replace(/[^a-zA-Z0-9-]/g, "")}`
-  const choose = useMutation({
+  const { mutate: choose, isPending, error } = useMutation({
     mutationFn: (choice: ProviderChoice) => client.providers.choose(choice),
     onSuccess: (choice) => queryClient.setQueryData(chatQueries.active(client).queryKey, choice),
   })
 
-  if (!active.data) {
+  if (!choice) {
     return <div className="flex-1" />
   }
 
-  const choice = active.data
-  const chosen = statuses.data?.find((known) => known.account.id === choice.account)
+  const chosen = statuses?.find((known) => known.account.id === choice.account)
   const chosenModel = chosen?.models.find((model) => (choice.model ? model.id === choice.model : model.isDefault))
-  const disabled = running || choose.isPending
+  const disabled = running || isPending
   const modelLabel = chosenModel?.label ?? choice.model
+  const effort = choice.effort ?? chosenModel?.defaultEffort
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -91,14 +78,19 @@ export function ProviderPicker({ client }: { client: EngineClient }) {
         style={{ anchorName }}
         popoverTarget={id}
         disabled={disabled}
-        aria-label={`Modelo: ${chosen?.account.name ?? "conta"}, ${modelLabel ?? "padrão"}`}
+        aria-haspopup="dialog"
+        aria-label={`Modelo: ${chosen?.account.name ?? "conta"}, ${modelLabel ?? "padrão"}${effort ? ` · Esforço: ${effortLabel(effort)}` : ""}`}
       >
         {chosen && <ProviderIcon provider={chosen.account.provider} className="size-4 shrink-0" />}
         <span className="truncate">{modelLabel ?? chosen?.account.name}</span>
+        {!!chosenModel?.efforts.length && effort && <>
+          <span className="mx-0.5 h-3 w-px shrink-0 bg-border" aria-hidden="true" />
+          <span className="shrink-0 text-xs">{effortLabel(effort)}</span>
+        </>}
         <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" aria-hidden="true" />
       </button>
-      <ProviderMenu client={client} id={id} anchorName={anchorName} choice={choice} disabled={disabled} onPick={(next) => choose.mutate(next)} />
-      {choose.error && <span className="truncate text-2xs text-destructive-foreground" role="alert">{choose.error.message}</span>}
+      <ProviderMenu client={client} id={id} anchorName={anchorName} choice={choice} disabled={disabled} onPick={choose} />
+      {error && <span className="truncate text-2xs text-destructive-foreground" role="alert">{error.message}</span>}
     </div>
   )
 }
@@ -217,7 +209,7 @@ function ModelOption({ row, accountName, showAccount, checked, starOnHover, disa
   const starHidden = !row.favorite || starOnHover
 
   return (
-    <div className="group flex h-7 items-center gap-0.5 rounded-sm pr-1 hover:bg-accent has-focus-visible:bg-accent">
+    <div className={`group flex h-7 items-center gap-0.5 rounded-sm pr-1 hover:bg-accent has-focus-visible:bg-accent ${checked ? "bg-accent" : ""}`}>
       <button type="button" role="menuitemradio" aria-checked={checked} className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left text-xs font-medium text-foreground outline-none disabled:pointer-events-none disabled:opacity-64" disabled={disabled} onClick={onPick}>
         {showAccount && <ProviderIcon provider={row.provider} className="size-3.5 shrink-0" />}
         <span className="min-w-0 truncate">{row.label}<span className="sr-only">, {accountName}</span></span>
@@ -225,7 +217,7 @@ function ModelOption({ row, accountName, showAccount, checked, starOnHover, disa
       <button type="button" className={`grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring ${starHidden ? "opacity-0 group-hover:opacity-100" : ""}`} aria-pressed={row.favorite} aria-label={`${row.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}: ${row.label}, ${accountName}`} onClick={onToggleFavorite}>
         <StarIcon className={`size-3 ${row.favorite ? "fill-current text-amber-400" : ""}`} aria-hidden="true" />
       </button>
-      <CheckIcon className={`size-3.5 shrink-0 ${checked ? "" : "invisible"}`} aria-hidden="true" />
+      <CheckIcon className={`size-3 shrink-0 ${checked ? "" : "invisible"}`} aria-hidden="true" />
     </div>
   )
 }
@@ -243,6 +235,7 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
   const crossAccount = tab === "favorites" || searching
   const popover = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const restoreFocus = useRef<"model" | "trigger" | undefined>(undefined)
   const toggleFavorite = useMutation({
     mutationFn: (favorite: FavoriteModel) => client.providers.toggleFavorite(favorite),
     onSuccess: (saved) => queryClient.setQueryData(chatQueries.favorites(client).queryKey, saved),
@@ -253,11 +246,30 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
   const rows = modelRows(enabled, starred)
   const visible = visibleRows(rows, starred, tab, search, accountNames)
   const selectedModel = choice.model ?? enabled.find((known) => known.account.id === choice.account)?.models.find((model) => model.isDefault)?.id
+  const chosenModel = enabled.find((known) => known.account.id === choice.account)?.models.find((model) => model.id === selectedModel)
+  const effort = choice.effort ?? chosenModel?.defaultEffort
   const isChosen = (row: ModelRow) => row.account === choice.account && row.model === selectedModel
   /** A favorite or the chosen model stays in view even when a newer one replaced it. */
   const folded = (row: ModelRow) => row.legacy && !row.favorite && !isChosen(row)
   const { listed, older } = foldOlder(visible, folded, crossAccount)
-  const longestTab = Math.max(1, starred.length, ...enabled.map(({ account }) => tabLength(rows.filter((row) => row.account === account.id), folded)))
+  const longestTab = Math.max(1, starred.length, chosenModel?.efforts.length ?? 0, ...enabled.map(({ account }) => tabLength(rows.filter((row) => row.account === account.id), folded)))
+
+  useEffect(() => {
+    if (disabled || !restoreFocus.current) {
+      return
+    }
+
+    const target = restoreFocus.current
+    restoreFocus.current = undefined
+
+    if (target === "trigger") {
+      document.querySelector<HTMLButtonElement>(`button[popovertarget="${id}"]`)?.focus()
+
+      return
+    }
+
+    popover.current?.querySelector<HTMLButtonElement>("[aria-label=Modelos] [aria-checked=true]")?.focus()
+  }, [disabled, choice, id])
 
   const option = (row: ModelRow) => (
     <ModelOption
@@ -274,8 +286,22 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
   )
 
   function pick(row: ModelRow) {
-    popover.current?.hidePopover()
+    if (isChosen(row)) {
+      return
+    }
+
+    restoreFocus.current = "model"
     onPick({ account: row.account, model: row.model })
+  }
+
+  function pickEffort(next: string) {
+    if (!chosenModel) {
+      return
+    }
+
+    restoreFocus.current = "trigger"
+    popover.current?.hidePopover()
+    onPick({ ...choice, model: chosenModel.id, effort: next })
   }
 
   function showTab(next: Tab) {
@@ -311,13 +337,14 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
       ref={popover}
       id={id}
       popover="auto"
+      role="dialog"
+      aria-label="Modelo e esforço"
       className="inset-auto m-0 mb-1 overflow-hidden rounded-lg border bg-popover p-0 text-foreground shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] [position-area:top_span-right] [position-try-fallbacks:flip-inline]"
       style={{ positionAnchor: anchorName }}
       onToggle={handleToggle}
-      onKeyDown={moveFocus}
     >
-      <div className="flex max-h-86.5 w-80 max-w-[calc(100vw-2rem)]" style={{ minHeight: `min(calc(${listChromeRem + longestTab * rowRem}rem + 1px), ${maxListRem}rem)` }}>
-        <div className="flex w-11 shrink-0 flex-col gap-1 overflow-y-auto bg-muted/30 p-1" role="group" aria-label="Conta">
+      <div className="flex max-h-86.5 w-92 max-w-[calc(100vw-2rem)]" style={{ minHeight: `min(calc(${listChromeRem + longestTab * rowRem}rem + 1px), ${maxListRem}rem)` }}>
+        <div className="flex w-9 shrink-0 flex-col gap-1 overflow-y-auto bg-muted/30 p-1" role="group" aria-label="Conta">
           <RailButton label="Favoritos" pressed={tab === "favorites"} onPick={() => showTab("favorites")}>
             <SolidStarIcon className="size-5" aria-hidden="true" />
           </RailButton>
@@ -328,8 +355,8 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
             </RailButton>
           ))}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col border-l border-border/70 bg-muted/40">
-          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/70 pr-1.5 pl-3">
+        <div className="flex min-w-0 flex-1 flex-col border-l border-border/70 bg-muted/40" onKeyDown={moveMenuFocus}>
+          <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border/70 pr-1 pl-2">
             <MagnifyingGlassIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <input ref={searchRef} className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-placeholder [&::-webkit-search-cancel-button]:hidden" type="search" autoComplete="off" placeholder="Buscar modelos…" aria-label="Buscar modelos" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={handleSearchKeyDown} />
             <IconButton label={statuses.isFetching ? "Verificando login…" : "Verificar login"} disabled={statuses.isFetching} onClick={() => void statuses.refetch()}>
@@ -348,6 +375,7 @@ function ProviderMenu({ client, id, anchorName, choice, disabled, onPick }: { cl
             {showOlder && older.map(option)}
           </div>
         </div>
+        {!!chosenModel?.efforts.length && <EffortOptions model={chosenModel} effort={effort} disabled={disabled} onPick={pickEffort} />}
       </div>
     </div>
   )

@@ -10,7 +10,8 @@ import { visit } from "unist-util-visit"
 
 const urlProperties = ["href", "src"] as const
 const urlDelimiters = ["/", "?", "#"]
-const safeProtocol = /^(https?|mailto)$/i
+/** `file:` lets a reply show an image on this computer; a `file:` link stays plain text. */
+const safeProtocol = /^(https?|mailto|file)$/i
 
 /** Keeps relative URLs and the safe protocols; anything else, such as `javascript:`, becomes empty. */
 function safeUrl(value: string) {

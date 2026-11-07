@@ -1,4 +1,5 @@
 import { isValidElement, memo, type ReactNode, Suspense, use } from "react"
+import { ChatImage } from "./chat-image"
 import { createMarkdownRenderer } from "./chat-markdown"
 
 type Highlight = typeof import("./chat-code-highlight").highlightChatCode
@@ -26,6 +27,7 @@ const markdown = createMarkdownRenderer({
     h3: ({ children }) => <h3 className="mt-5 mb-2 text-base leading-tight font-semibold">{children}</h3>,
     h4: ({ children }) => <h4 className="mt-5 mb-2 text-sm leading-tight font-semibold">{children}</h4>,
     hr: () => <hr className="my-5 h-px border-0 bg-border" />,
+    img: ({ src, alt }) => src ? <ChatImage src={String(src)} alt={alt ?? ""} /> : null,
     li: ({ children }) => <li className="p-0 marker:text-muted-foreground [&+&]:mt-1">{children}</li>,
     ol: ({ children, start }) => <ol start={start} className="my-2.5 list-decimal pl-5">{children}</ol>,
     p: ({ children }) => <p className="my-2.5">{children}</p>,
