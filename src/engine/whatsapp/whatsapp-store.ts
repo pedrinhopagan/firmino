@@ -21,7 +21,7 @@ interface WhatsappChat {
 const chatName = (chatId: string) => `COALESCE(c.name, substr(${chatId}, 1, instr(${chatId}, '@') - 1))`
 
 /**
- * WhatsApp's tables in the Kolega database: messages, one summary row per chat kept in step with them,
+ * WhatsApp's tables in the Firmino database: messages, one summary row per chat kept in step with them,
  * contact names, LID mappings and the linked account's Signal keys.
  * Chats are kept under one canonical id per person: a LID moves to its phone-number jid as soon as a mapping arrives.
  */

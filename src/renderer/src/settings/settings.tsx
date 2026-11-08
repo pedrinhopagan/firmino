@@ -15,7 +15,7 @@ export const settingsPages = {
   appearance: { label: "Aparência", description: "Modo e tema", icon: SwatchIcon, Page: Appearance },
   providers: { label: "Fornecedores", description: "Contas do Codex e do Claude", icon: CpuChipIcon, Page: ProviderAccounts },
   connections: { label: "Conexões", description: "WhatsApp, Google e navegador", icon: LinkIcon, Page: Connections },
-  memory: { label: "Memória", description: "O que o Kolega anotou sobre você", icon: LightBulbIcon, Page: MemorySettings },
+  memory: { label: "Memória", description: "O que o Firmino anotou sobre você", icon: LightBulbIcon, Page: MemorySettings },
   appointments: { label: "Compromissos", description: "O que você precisa fazer num dia", icon: CheckCircleIcon, Page: Appointments },
   routines: { label: "Rotinas", description: "Tarefas que se repetem", icon: ArrowPathIcon, Page: Routines },
   schedules: { label: "Agendamentos", description: "Tarefas marcadas para um horário", icon: CalendarIcon, Page: Schedules },

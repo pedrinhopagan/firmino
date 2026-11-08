@@ -30,8 +30,8 @@ const cookieSchema = z.object({
 }))
 
 async function findProfile() {
-  if (process.env.KOLEGA_ZEN_PROFILE) {
-    return process.env.KOLEGA_ZEN_PROFILE
+  if (process.env.FIRMINO_ZEN_PROFILE) {
+    return process.env.FIRMINO_ZEN_PROFILE
   }
 
   const home = homedir()
@@ -64,7 +64,7 @@ async function findProfile() {
     const defaults = [...new Set(installed)]
 
     if (defaults.length > 1) {
-      throw new Error("Há vários perfis padrão do Zen. Defina KOLEGA_ZEN_PROFILE com a pasta desejada.")
+      throw new Error("Há vários perfis padrão do Zen. Defina FIRMINO_ZEN_PROFILE com a pasta desejada.")
     }
 
     const profiles = sections.filter((section) => section.name.startsWith("Profile"))
@@ -72,7 +72,7 @@ async function findProfile() {
     const path = defaults[0] ?? profile?.values.Path
 
     if (!path) {
-      throw new Error("Selecione o perfil do Zen usando KOLEGA_ZEN_PROFILE.")
+      throw new Error("Selecione o perfil do Zen usando FIRMINO_ZEN_PROFILE.")
     }
 
     if (isAbsolute(path)) {
@@ -87,7 +87,7 @@ async function findProfile() {
 
 /** Opens a private copy of the profile's cookie database, with its pending changes: a running Zen holds the original locked. Deletes the copy after `read`. */
 async function readCookieDatabase<T>(profile: string, read: (database: DatabaseSync) => T) {
-  const copy = await mkdtemp(join(tmpdir(), "kolega-zen-"))
+  const copy = await mkdtemp(join(tmpdir(), "firmino-zen-"))
 
   try {
     await copyFile(join(profile, "cookies.sqlite"), join(copy, "cookies.sqlite"))
@@ -190,7 +190,7 @@ function knownSites(domains: string[]) {
 }
 
 /**
- * Imports the chosen Zen identity before any Kolega page navigates; `identity` is a container id, 0 for the default one.
+ * Imports the chosen Zen identity before any Firmino page navigates; `identity` is a container id, 0 for the default one.
  * Without a choice it takes the only identity there is, and refuses when there are several. Never writes to Zen.
  */
 export async function importZenSession(cookies: Pick<Cookies, "get" | "set" | "flushStore">, identity?: number) {
@@ -221,7 +221,7 @@ export async function importZenSession(cookies: Pick<Cookies, "get" | "set" | "f
     await Promise.all(rows.slice(start, start + importConcurrency).map(async (row) => {
       const result = cookieSchema.safeParse(row)
 
-      // Keep a site's Kolega identity intact, rather than mixing two accounts' cookies.
+      // Keep a site's Firmino identity intact, rather than mixing two accounts' cookies.
       if (!result.success || known(new URL(result.data.url).hostname)) {
         skipped += 1
 

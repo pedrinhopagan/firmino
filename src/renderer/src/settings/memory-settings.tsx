@@ -39,14 +39,14 @@ export function MemorySettings({ client }: { client: EngineClient }) {
 
   return (
     <>
-      <SettingsSection title="O que o Kolega lembra" description="O Kolega anota o que aprende sobre você e relê essas anotações a cada conversa. Para ele esquecer algo, peça na conversa ou apague aqui.">
+      <SettingsSection title="O que o Firmino lembra" description="O Firmino anota o que aprende sobre você e relê essas anotações a cada conversa. Para ele esquecer algo, peça na conversa ou apague aqui.">
         <div className={settingsGroupClassName}>
           <SettingsRow title={countLabel(data?.length)} description={<span role="status">{cleared ? "Memória limpa. O histórico da conversa continua." : "Limpar não apaga o histórico da conversa."}</span>}>
             <Button variant="danger" disabled={!data?.length || clearing} onClick={() => confirm.current?.showModal()}>Limpar memória</Button>
           </SettingsRow>
           {(error ?? clearError) && <p className={settingsErrorClassName} role="alert">{(error ?? clearError)?.message}</p>}
         </div>
-        <ConfirmDialog ref={confirm} title="Limpar a memória?" description="O Kolega esquece tudo o que anotou sobre você. Não dá para desfazer." confirmLabel="Limpar memória" onConfirm={() => clear()} />
+        <ConfirmDialog ref={confirm} title="Limpar a memória?" description="O Firmino esquece tudo o que anotou sobre você. Não dá para desfazer." confirmLabel="Limpar memória" onConfirm={() => clear()} />
       </SettingsSection>
       {!!data?.length && (
         <SettingsSection title="Memórias">

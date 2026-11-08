@@ -1,10 +1,10 @@
 {
-  "name": "kolega",
+  "name": "firmino",
   "version": "0.1.0",
   "private": true,
   "description": "Secretário pessoal que fica aberto no seu computador",
   "author": "Pedro Antônio Pagan Bonaldo",
-  "desktopName": "kolega.desktop",
+  "desktopName": "firmino.desktop",
   "packageManager": "bun@1.4.0",
   "type": "module",
   "main": "out/main/index.js",
@@ -12,7 +12,7 @@
   "scripts": {
     "postinstall": "bun node_modules/electron/install.js",
     "dev": "bun run build:engine && electron-vite dev",
-    "build:engine": "bun build --compile --no-compile-autoload-dotenv --outfile dist-engine/kolega-engine src/engine/index.ts src/engine/whatsapp/whatsapp-connection.ts",
+    "build:engine": "bun build --compile --no-compile-autoload-dotenv --outfile dist-engine/firmino-engine src/engine/index.ts src/engine/whatsapp/whatsapp-connection.ts",
     "build:electron": "electron-vite build",
     "build": "bun run build:engine && bun run build:electron",
     "package:linux": "bun run build && electron-builder --linux",

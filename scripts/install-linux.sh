@@ -31,4 +31,4 @@ DESKTOP
 
 entry "" >"$applications/$name.desktop"
 entry " --hidden" >"$autostart/$name.desktop"
-echo "$product $version instalado em $executable. Feche e abra o Kolega para usar a nova versão."
+echo "$product $version instalado em $executable. Feche e abra o Firmino para usar a nova versão."

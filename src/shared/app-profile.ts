@@ -8,8 +8,8 @@ interface AppProfile {
 
 export function resolveAppProfile(packaged: boolean): AppProfile {
   if (packaged) {
-    return { name: "Kolega", desktopName: "kolega", icon: "icon.png", debuggingPort: 0 }
+    return { name: "Firmino", desktopName: "firmino", icon: "icon.png", debuggingPort: 0 }
   }
 
-  return { name: "Kolega Dev", desktopName: "kolega-dev", icon: "icon-dev.png", debuggingPort: 9250 }
+  return { name: "Firmino Dev", desktopName: "firmino-dev", icon: "icon-dev.png", debuggingPort: 9250 }
 }

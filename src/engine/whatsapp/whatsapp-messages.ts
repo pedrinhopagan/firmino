@@ -80,7 +80,7 @@ export function lidPair(first?: string | null, second?: string | null): Whatsapp
   return { lid, pn }
 }
 
-/** The one id Kolega keeps for a person: the phone-number jid when any source has mapped the LID, the LID until then. */
+/** The one id Firmino keeps for a person: the phone-number jid when any source has mapped the LID, the LID until then. */
 export function canonicalJid(jid: string | null | undefined, phones: Map<string, string>) {
   const normalized = jidNormalizedUser(jid ?? "")
 

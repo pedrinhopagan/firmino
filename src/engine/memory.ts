@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { StoredMemory } from "@src/shared/memory"
-import type { KolegaDatabase } from "./database"
+import type { FirminoDatabase } from "./database"
 
 /** Memories lo through hi - 1. A block is an aligned power-of-two range, summarized in one line from its two halves. */
 type Block = [lo: number, hi: number]
@@ -102,14 +102,14 @@ function text(value: string) {
 }
 
 /**
- * Kolega's permanent memory, after OptMem (github.com/VictorTaelin/OptMem): an append-only log of one-line memories and a binary tree of one-line summaries over it.
+ * Firmino's permanent memory, after OptMem (github.com/VictorTaelin/OptMem): an append-only log of one-line memories and a binary tree of one-line summaries over it.
  * The agent records and compresses memories through its MCP tools; each provider session reads the memory document when the memory changed since it last read it.
  */
 export class Memory {
   /** Counts the clears and forgets, so a turn that ran across one knows its session still holds the memories that are gone. */
   private erasures = 0
 
-  constructor(private readonly database: KolegaDatabase) {}
+  constructor(private readonly database: FirminoDatabase) {}
 
   /**
    * What a turn on the provider session `thread` carries about the memory: the memory document, when the session has not read the current memory.

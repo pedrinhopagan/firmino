@@ -2,7 +2,7 @@ import { XMarkIcon } from "@heroicons/react/16/solid"
 import { useMutation } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
 import { useEffect, useRef } from "react"
-import kolegaMark from "@resources/icon.svg"
+import firminoMark from "@resources/icon.svg"
 import type { Appointment } from "@src/shared/appointment"
 import type { EngineClient } from "../engine-client"
 import { IconButton } from "../ui/icon-button"
@@ -83,8 +83,8 @@ export function AppointmentToast({ client }: { client: EngineClient }) {
     <div ref={fit} className="p-3">
       <section className="flex flex-col gap-2 rounded-xl border bg-popover p-2 text-foreground shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)]" aria-label="Compromissos">
         <p className="m-0 flex items-center gap-1.5 px-1 pt-0.5 text-2xs text-muted-foreground">
-          <img className="size-3.5" src={kolegaMark} alt="" />
-          Kolega
+          <img className="size-3.5" src={firminoMark} alt="" />
+          Firmino
         </p>
         {shown.map((appointment) => (
           <AppointmentCard key={appointment.id} appointment={appointment} now={now} onOpen={() => void window.desktop.openAppointment(appointment.id)}>

@@ -43,7 +43,7 @@ export function AppointmentPage({ client, id }: { client: EngineClient; id: stri
       <ConfirmDialog
         ref={confirm}
         title={`Remover o compromisso “${appointment.title}”?`}
-        description="O Kolega não vai mais mostrar nem avisar sobre ele. Para marcar de novo, peça na conversa."
+        description="O Firmino não vai mais mostrar nem avisar sobre ele. Para marcar de novo, peça na conversa."
         confirmLabel="Remover"
         onConfirm={() => remove.mutate()}
       />

@@ -56,12 +56,12 @@ export class EngineProcess {
     const child = spawn(this.options.executable, [], {
       env: {
         ...inheritedEnvironment(),
-        KOLEGA_ENGINE_TOKEN: token,
-        KOLEGA_DATA_DIRECTORY: this.options.dataDirectory,
-        KOLEGA_DEVELOPMENT: this.options.development ? "true" : "false",
-        ...(this.options.googleClient ? { KOLEGA_GOOGLE_CLIENT_ID: this.options.googleClient.id } : {}),
-        ...(this.options.googleClient?.secret ? { KOLEGA_GOOGLE_CLIENT_SECRET: this.options.googleClient.secret } : {}),
-        ...(process.env.KOLEGA_PROVIDER_IDLE_MS ? { KOLEGA_PROVIDER_IDLE_MS: process.env.KOLEGA_PROVIDER_IDLE_MS } : {}),
+        FIRMINO_ENGINE_TOKEN: token,
+        FIRMINO_DATA_DIRECTORY: this.options.dataDirectory,
+        FIRMINO_DEVELOPMENT: this.options.development ? "true" : "false",
+        ...(this.options.googleClient ? { FIRMINO_GOOGLE_CLIENT_ID: this.options.googleClient.id } : {}),
+        ...(this.options.googleClient?.secret ? { FIRMINO_GOOGLE_CLIENT_SECRET: this.options.googleClient.secret } : {}),
+        ...(process.env.FIRMINO_PROVIDER_IDLE_MS ? { FIRMINO_PROVIDER_IDLE_MS: process.env.FIRMINO_PROVIDER_IDLE_MS } : {}),
       },
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     })

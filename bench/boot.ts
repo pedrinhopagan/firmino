@@ -1,11 +1,11 @@
 import { parseArgs } from "node:util"
-import { launchKolega, spanStart } from "./app"
+import { launchFirmino, spanStart } from "./app"
 
-const { values } = parseArgs({ args: Bun.argv.slice(2), options: { "user-data": { type: "string", default: ".kolega-bench" }, rounds: { type: "string", default: "5" } } })
+const { values } = parseArgs({ args: Bun.argv.slice(2), options: { "user-data": { type: "string", default: ".firmino-bench" }, rounds: { type: "string", default: "5" } } })
 const results = []
 
 for (let round = 0; round < Number(values.rounds); round += 1) {
-  const app = await launchKolega(values["user-data"])
+  const app = await launchFirmino(values["user-data"])
 
   try {
     const firstRpc = await app.waitFor("renderer.rpc")

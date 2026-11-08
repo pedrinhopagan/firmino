@@ -1,7 +1,7 @@
 import { GlobeAltIcon } from "@heroicons/react/16/solid"
 import { useStore } from "@tanstack/react-store"
 import { useEffect } from "react"
-import kolegaMark from "@resources/icon.svg"
+import firminoMark from "@resources/icon.svg"
 import { PinnedAppointments } from "./appointments/appointment-card"
 import { browserStore } from "./browser/browser-events"
 import { BrowserPanel } from "./browser/browser-panel"
@@ -36,10 +36,10 @@ export function App({ client }: { client: EngineClient }) {
       {shown && <BrowserPanel page={browserPage} />}
       <div className={`flex min-h-0 flex-col ${shown ? "w-[399px] shrink-0 border-l" : "min-w-0 flex-1"}`}>
         <header className="flex h-12 shrink-0 items-center gap-1 border-b pr-2 pl-3 [-webkit-app-region:drag]">
-          <img className="mr-1 size-5 shrink-0" src={kolegaMark} alt="" />
-          <h1 className="m-0 flex-1 text-sm font-medium">Kolega</h1>
+          <img className="mr-1 size-5 shrink-0" src={firminoMark} alt="" />
+          <h1 className="m-0 flex-1 text-sm font-medium">Firmino</h1>
           {browserPage && !shown && (
-            <IconButton className="[-webkit-app-region:no-drag]" label="Ver a página do Kolega" tooltipPlacement="bottom" onClick={() => void window.desktop.showBrowser()}>
+            <IconButton className="[-webkit-app-region:no-drag]" label="Ver a página do Firmino" tooltipPlacement="bottom" onClick={() => void window.desktop.showBrowser()}>
               <GlobeAltIcon aria-hidden="true" />
             </IconButton>
           )}

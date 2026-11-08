@@ -31,10 +31,10 @@ export function BrowserPanel({ page }: { page: BrowserState }) {
   }, [])
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col gap-2 pb-2" aria-label="Página do Kolega">
+    <section className="flex min-w-0 flex-1 flex-col gap-2 pb-2" aria-label="Página do Firmino">
       <div className="flex min-h-12 items-center gap-3 py-1.5 pr-2 pl-3 [-webkit-app-region:drag]">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="m-0 line-clamp-2 text-sm text-foreground" title={page.reason ?? undefined}>{page.reason ?? "Você está com a página. O Kolega espera você devolver o controle."}</p>
+          <p className="m-0 line-clamp-2 text-sm text-foreground" title={page.reason ?? undefined}>{page.reason ?? "Você está com a página. O Firmino espera você devolver o controle."}</p>
           <p className="m-0 truncate text-2xs text-muted-foreground" title={page.url}>{page.title ? `${page.title} · ${host(page.url)}` : host(page.url)}</p>
         </div>
         <Button className="[-webkit-app-region:no-drag]" onClick={() => void window.desktop.returnBrowserControl()}>Devolver controle</Button>

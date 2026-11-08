@@ -3,8 +3,8 @@ import { z } from "zod"
 import type { ProviderStatus } from "@src/shared/conversation"
 import { providerEffort } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
-import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
-import { clipDetail, errorMessage, imagePath, kolegaInstructions, markLegacy, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult, type WorkUpdate } from "./provider"
+import { firminoMcpTokenVariable, firminoToolTimeoutMs } from "../firmino-mcp"
+import { clipDetail, errorMessage, imagePath, firminoInstructions, markLegacy, firminoWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult, type WorkUpdate } from "./provider"
 
 const requestTimeoutMs = 20_000
 
@@ -21,7 +21,7 @@ const agentMessageDelta = z.object({ turnId: z.string(), itemId: z.string(), del
 const stepStatus = { inProgress: "running", completed: "completed", failed: "failed", declined: "failed" } as const
 const itemStatus = z.enum(["inProgress", "completed", "failed", "declined"]).transform((status) => stepStatus[status])
 const textContent = z.array(z.looseObject({ text: z.string().optional() })).transform((items) => items.flatMap((item) => item.text ?? []).join("\n"))
-/** The items Kolega shows in the work log; agent and user messages are the conversation itself. */
+/** The items Firmino shows in the work log; agent and user messages are the conversation itself. */
 const workItem = z.discriminatedUnion("type", [
   z.object({ type: z.literal("reasoning"), id: z.string(), summary: z.array(z.string()) }),
   z.object({ type: z.literal("commandExecution"), id: z.string(), command: z.string(), status: itemStatus, aggregatedOutput: z.string().nullable() }),
@@ -139,7 +139,7 @@ const loginStarted = z.object({ authUrl: z.url() })
 const loginCompleted = z.object({ success: z.boolean(), error: z.string().nullable().optional() })
 const modelList = z.object({ data: z.array(z.object({
   model: z.string(),
-  // Codex names some models GPT-6.1-Sol and others GPT-6.1 Terra; Kolega shows them all as T3 Code does, GPT-6.1 Sol.
+  // Codex names some models GPT-6.1-Sol and others GPT-6.1 Terra; Firmino shows them all as T3 Code does, GPT-6.1 Sol.
   displayName: z.string().transform((name) => name.replace(/(\d)-(?=[A-Z])/, "$1 ")),
   hidden: z.boolean(),
   isDefault: z.boolean(),
@@ -163,11 +163,11 @@ const configFlags = Object.entries({
   project_doc_max_bytes: 0,
 }).flatMap(([key, value]) => ["-c", `${key}=${JSON.stringify(value)}`])
 
-const runtimeMode = { cwd: kolegaWorkingDirectory, approvalPolicy: "never" } as const
+const runtimeMode = { cwd: firminoWorkingDirectory, approvalPolicy: "never" } as const
 
 interface CodexHandlers {
   notification?: (method: string, params: unknown) => void
-  /** Answers a request Codex sends; without an answer, Kolega refuses it. */
+  /** Answers a request Codex sends; without an answer, Firmino refuses it. */
   request?: (method: string, params: unknown) => Promise<unknown> | undefined
 }
 
@@ -182,9 +182,9 @@ class CodexAppServer {
   }
 
   static async start(launch: ProviderLaunch, handlers: CodexHandlers = {}) {
-    const server = new CodexAppServer(Bun.spawn([launch.executable, "app-server", ...configFlags], { cwd: kolegaWorkingDirectory, env: { ...process.env, ...launch.env }, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), handlers)
+    const server = new CodexAppServer(Bun.spawn([launch.executable, "app-server", ...configFlags], { cwd: firminoWorkingDirectory, env: { ...process.env, ...launch.env }, stdin: "pipe", stdout: "pipe", stderr: "ignore" }), handlers)
 
-    await server.request("initialize", { clientInfo: { name: "kolega", title: "Kolega", version: "0.1.0" }, capabilities: { experimentalApi: true } }).catch((error: unknown) => {
+    await server.request("initialize", { clientInfo: { name: "firmino", title: "Firmino", version: "0.1.0" }, capabilities: { experimentalApi: true } }).catch((error: unknown) => {
       server.process.kill()
 
       throw error
@@ -248,7 +248,7 @@ class CodexAppServer {
 
       // Full-access mode never asks for approval; refuse any other server request so Codex does not wait on it.
       if (!answer) {
-        this.send({ id: message.id, error: { code: -32601, message: "Kolega does not handle this request" } })
+        this.send({ id: message.id, error: { code: -32601, message: "Firmino does not handle this request" } })
 
         return
       }
@@ -370,7 +370,7 @@ export class CodexSession implements ProviderSession {
 
   private async open() {
     const { launch, mcp } = this.options
-    const server = await CodexAppServer.start({ ...launch, env: { ...launch.env, [kolegaMcpTokenVariable]: mcp.token } }, { notification: (method, params) => this.handle(method, params), request: (method, params) => this.ask(method, params) })
+    const server = await CodexAppServer.start({ ...launch, env: { ...launch.env, [firminoMcpTokenVariable]: mcp.token } }, { notification: (method, params) => this.handle(method, params), request: (method, params) => this.ask(method, params) })
     this.live = server
     void server.exited.then(() => this.lost(server))
 
@@ -383,10 +383,10 @@ export class CodexSession implements ProviderSession {
   }
 
   private async openThread(server: CodexAppServer) {
-    const userServersOff = parse(userMcpServersOff, await server.request("config/read", { cwd: kolegaWorkingDirectory }))
+    const userServersOff = parse(userMcpServersOff, await server.request("config/read", { cwd: firminoWorkingDirectory }))
     // Thread config overrides apply to resumed threads too; Codex reads the bearer token from its own environment.
-    const config = { mcp_servers: { ...userServersOff, kolega: { url: this.options.mcp.url, bearer_token_env_var: kolegaMcpTokenVariable, tool_timeout_sec: kolegaToolTimeoutMs / 1000 } } }
-    const thread = { ...runtimeMode, sandbox: "danger-full-access", developerInstructions: kolegaInstructions, config }
+    const config = { mcp_servers: { ...userServersOff, firmino: { url: this.options.mcp.url, bearer_token_env_var: firminoMcpTokenVariable, tool_timeout_sec: firminoToolTimeoutMs / 1000 } } }
+    const thread = { ...runtimeMode, sandbox: "danger-full-access", developerInstructions: firminoInstructions, config }
     const resumed = this.threadId ? await server.request("thread/resume", { ...thread, threadId: this.threadId }).catch(() => undefined) : undefined
     this.threadId = parse(threadResponse, resumed ?? await server.request("thread/start", thread)).thread.id
     this.options.onSession(this.threadId)
@@ -394,7 +394,7 @@ export class CodexSession implements ProviderSession {
     return server
   }
 
-  /** The model Codex's own config names may not be available to this account, so Kolega asks for the account's default. */
+  /** The model Codex's own config names may not be available to this account, so Firmino asks for the account's default. */
   private async resolveModel(server: CodexAppServer, id?: string) {
     this.models ??= parse(modelList, await server.request("model/list", {})).data
     const model = this.models.find((candidate) => id ? candidate.model === id : candidate.isDefault)

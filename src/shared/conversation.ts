@@ -69,7 +69,7 @@ export const conversationMessage = z.object({
   provider: providerId,
   /** The account that answered, or that the user wrote to. */
   account: z.string(),
-  /** The name of the Rotina that sent this message; null when the user wrote it or Kolega answered. */
+  /** The name of the Rotina that sent this message; null when the user wrote it or Firmino answered. */
   routine: z.string().nullable(),
   /** The name of the Gatilho that sent this message; null otherwise. */
   trigger: z.string().nullable(),
@@ -118,7 +118,7 @@ export const providerChoice = z.object({
 
 export const newProviderAccount = providerAccount.pick({ provider: true, name: true, home: true })
 
-/** A sign-in in progress: the page Kolega opened in the browser. */
+/** A sign-in in progress: the page Firmino opened in the browser. */
 export const providerLoginEvent = z.object({ url: z.url() })
 
 /** A starred model of one account. */

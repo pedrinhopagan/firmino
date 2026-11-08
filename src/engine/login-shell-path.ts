@@ -1,5 +1,5 @@
-const startMarker = "__KOLEGA_PATH_START__"
-const endMarker = "__KOLEGA_PATH_END__"
+const startMarker = "__FIRMINO_PATH_START__"
+const endMarker = "__FIRMINO_PATH_END__"
 const shellTimeoutMs = 5_000
 
 async function readPath(shell: string) {

@@ -22,7 +22,7 @@ const keys = {
 }
 
 /**
- * Runs in the page, in Kolega's isolated world: the text and the interactive elements inside the viewport, in document
+ * Runs in the page, in Firmino's isolated world: the text and the interactive elements inside the viewport, in document
  * order, each element inline as `[@eN role "name"]`. The elements stay in the world for click and fill; the page's own
  * scripts cannot see them. The walk stops once the content reaches the budget.
  */
@@ -36,7 +36,7 @@ const snapshotInPage = String((budget: number, nameLength: number) => {
   let line = ""
   let size = 0
   let block: Element | null = null
-  Reflect.set(globalThis, "kolegaReferences", references)
+  Reflect.set(globalThis, "firminoReferences", references)
 
   const clean = (text: string) => text.replace(/\s+/g, " ").trim()
   const inView = (rect: DOMRect) => rect.bottom > 0 && rect.top < height && rect.width > 0 && rect.height > 0
@@ -352,7 +352,7 @@ export class BrowserDriver {
     }
 
     const index = Number(target.slice(2)) - 1
-    const found = await this.send(signal, "Runtime.evaluate", { expression: `globalThis.kolegaReferences?.[${index}]?.isConnected ? globalThis.kolegaReferences[${index}] : undefined`, contextId: this.world }).catch(() => {
+    const found = await this.send(signal, "Runtime.evaluate", { expression: `globalThis.firminoReferences?.[${index}]?.isConnected ? globalThis.firminoReferences[${index}] : undefined`, contextId: this.world }).catch(() => {
       throw gone
     })
     const { objectId } = parse(remoteObject, found).result
@@ -416,7 +416,7 @@ export class BrowserDriver {
 
   private async snapshot(signal: AbortSignal) {
     const { frameTree: { frame } } = parse(frameTree, await this.send(signal, "Page.getFrameTree"))
-    this.world = parse(isolatedWorld, await this.send(signal, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "kolega" })).executionContextId
+    this.world = parse(isolatedWorld, await this.send(signal, "Page.createIsolatedWorld", { frameId: frame.id, worldName: "firmino" })).executionContextId
     const evaluated = parse(evaluation, await this.send(signal, "Runtime.evaluate", { expression: `(${snapshotInPage})(${snapshotBudget}, ${maxNameLength})`, contextId: this.world, returnByValue: true }))
     const page = parse(snapshotResult, evaluated.result.value)
     const bottom = page.top + page.height

@@ -42,7 +42,7 @@ export const engineContract = {
     add: oc.input(newProviderAccount).output(providerAccount).route({ method: "POST", path: "/providers/accounts" }),
     update: oc.input(providerAccount.pick({ id: true, name: true, enabled: true })).output(providerAccount).route({ method: "PATCH", path: "/providers/accounts" }),
     remove: oc.input(z.object({ id: z.string() })).route({ method: "DELETE", path: "/providers/accounts" }),
-    /** Adds the Codex and Claude accounts T3 Code uses, and updates the ones Kolega already has. */
+    /** Adds the Codex and Claude accounts T3 Code uses, and updates the ones Firmino already has. */
     importT3: oc.output(z.array(providerAccount)).route({ method: "POST", path: "/providers/accounts/import-t3" }),
     /** Opens the provider's sign-in page; the stream ends when the sign-in finishes, and aborting it cancels the sign-in. */
     login: oc.input(z.object({ id: z.string() })).output(eventIterator(providerLoginEvent)).route({ method: "POST", path: "/providers/login" }),

@@ -3,7 +3,7 @@ import { EventPublisher } from "@orpc/server"
 import { z } from "zod"
 import { type Appointment, appointment, localDay } from "@src/shared/appointment"
 import { time } from "@src/shared/routine"
-import type { KolegaDatabase } from "./database"
+import type { FirminoDatabase } from "./database"
 import type { Observability } from "./observability"
 
 /** A Compromisso as stored: with the time of its next alert, which only the Engine reads. */
@@ -107,7 +107,7 @@ function text(value: string) {
 }
 
 /**
- * Kolega's Compromissos: what the user must do on a day, shown as a card in the app until they mark it done.
+ * Firmino's Compromissos: what the user must do on a day, shown as a card in the app until they mark it done.
  * One timer waits for the earliest alert. An alert asks Main to open the cards outside the app; one missed while the app was closed happens on the next start.
  */
 export class Appointments {
@@ -115,7 +115,7 @@ export class Appointments {
   private closed = false
   private readonly publisher = new EventPublisher<{ appointments: Appointment[] }>()
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly onAlert: () => void) {}
+  constructor(private readonly database: FirminoDatabase, private readonly observability: Observability, private readonly onAlert: () => void) {}
 
   /** Starts the alerts, after the Engine told Main it is ready: an alert still open from the last run opens again. */
   start() {
@@ -128,7 +128,7 @@ export class Appointments {
 
   registerTools(server: McpServer) {
     server.registerTool("save_appointment", {
-      description: "Create or change one Compromisso: something the user must do or attend on a day. Kolega shows it as a pinned card and alerts on screen until the user marks it done. Give an id to change one; omit it to create one. Times are the user's local time.",
+      description: "Create or change one Compromisso: something the user must do or attend on a day. Firmino shows it as a pinned card and alerts on screen until the user marks it done. Give an id to change one; omit it to create one. Times are the user's local time.",
       inputSchema: saveInput,
     }, (input) => this.observability.span({ name: "appointments.save" }, () => text(`Compromisso ${input.id ? "changed" : "created"}: ${describe(this.save(input))}`)))
     server.registerTool("list_appointments", {

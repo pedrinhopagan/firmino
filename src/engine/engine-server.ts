@@ -1,7 +1,7 @@
 import type { RPCHandler } from "@orpc/server/fetch"
 import { timingSafeEqual } from "node:crypto"
 import type { EngineContext } from "./engine-router"
-import { kolegaMcpPath } from "./kolega-mcp"
+import { firminoMcpPath } from "./firmino-mcp"
 
 const rpcPrefix = "/rpc"
 const preflightHeaders = {
@@ -49,7 +49,7 @@ function bearer(token: string) {
 
 /**
  * Serves, on a random loopback port, the RPC router to requests carrying the token Main generated for this run,
- * and Kolega's MCP server to requests carrying the providers' own token.
+ * and Firmino's MCP server to requests carrying the providers' own token.
  */
 export function createEngineServer({ token, handler, mcp }: {
   token: string
@@ -97,7 +97,7 @@ export function createEngineServer({ token, handler, mcp }: {
 
       const { pathname } = new URL(request.url)
 
-      if (pathname === kolegaMcpPath) {
+      if (pathname === firminoMcpPath) {
         // Providers call from their own process and send no Origin; a browser page that does was refused above.
         if (!mcpAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 })

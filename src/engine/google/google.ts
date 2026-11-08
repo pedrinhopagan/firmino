@@ -3,7 +3,7 @@ import { EventPublisher } from "@orpc/server"
 import { z } from "zod"
 import type { GoogleStatus } from "@src/shared/google"
 import { parse } from "@src/shared/parse"
-import type { KolegaDatabase } from "../database"
+import type { FirminoDatabase } from "../database"
 import type { Observability } from "../observability"
 import type { Triggers } from "../triggers"
 import { registerCalendarTools } from "./calendar"
@@ -23,7 +23,7 @@ export class GoogleApiError extends Error {
 }
 
 /**
- * Kolega's Google connection: one consent for Gmail and Calendar, the stored tokens, the agent's tools and the e-mail watch for Gatilhos.
+ * Firmino's Google connection: one consent for Gmail and Calendar, the stored tokens, the agent's tools and the e-mail watch for Gatilhos.
  * Until the user connects, it costs nothing: no request, no timer. Main opens the consent page because only it has the desktop session.
  */
 export class Google {
@@ -34,7 +34,7 @@ export class Google {
   private readonly mail: MailWatch
 
   constructor(
-    private readonly database: KolegaDatabase,
+    private readonly database: FirminoDatabase,
     private readonly observability: Observability,
     private readonly triggers: Pick<Triggers, "deliver" | "mayMessage" | "wants">,
     private readonly openConsent: (url: string) => void,
@@ -61,7 +61,7 @@ export class Google {
     }
 
     if (!this.client) {
-      this.publish({ state: "disconnected", error: "Este build do Kolega não tem o cliente OAuth do Google." })
+      this.publish({ state: "disconnected", error: "Este build do Firmino não tem o cliente OAuth do Google." })
 
       return this.status
     }
@@ -161,7 +161,7 @@ export class Google {
   /** One refresh at a time, so parallel calls share it; a grant Google no longer accepts ends the connection. */
   private refresh(credentials: GoogleCredentials) {
     if (!this.client) {
-      throw new Error("This Kolega build has no Google OAuth client")
+      throw new Error("This Firmino build has no Google OAuth client")
     }
 
     this.refreshing ??= refreshCredentials(this.client, credentials).then((refreshed) => {
@@ -177,10 +177,10 @@ export class Google {
       }
 
       this.forget()
-      this.publish({ state: "disconnected", error: "O Google encerrou o acesso do Kolega. Conecte de novo." })
+      this.publish({ state: "disconnected", error: "O Google encerrou o acesso do Firmino. Conecte de novo." })
       this.observability.event({ name: "google.grantended" })
 
-      throw new Error("Google ended Kolega's access. Ask the user to connect Google again in Conexões.", { cause: error })
+      throw new Error("Google ended Firmino's access. Ask the user to connect Google again in Conexões.", { cause: error })
     }).finally(() => {
       this.refreshing = undefined
     })

@@ -12,7 +12,7 @@ import { Discord } from "./discord"
 import { createEngineRouter } from "./engine-router"
 import { createEngineServer } from "./engine-server"
 import { Google } from "./google/google"
-import { handleKolegaMcp, kolegaMcpPath } from "./kolega-mcp"
+import { handleFirminoMcp, firminoMcpPath } from "./firmino-mcp"
 import { Memory } from "./memory"
 import { createObservationSystem } from "./observability"
 import { ProviderAccounts } from "./providers/provider-accounts"
@@ -22,17 +22,17 @@ import { Whatsapp } from "./whatsapp/whatsapp"
 
 const providerIdleDefaultMs = 5 * 60_000
 const environment = parse(z.object({
-  KOLEGA_ENGINE_TOKEN: z.string().min(1),
-  KOLEGA_DATA_DIRECTORY: z.string().min(1),
-  KOLEGA_DEVELOPMENT: z.enum(["true", "false"]),
-  KOLEGA_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-  KOLEGA_GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-  KOLEGA_PROVIDER_IDLE_MS: z.coerce.number().int().positive().default(providerIdleDefaultMs),
+  FIRMINO_ENGINE_TOKEN: z.string().min(1),
+  FIRMINO_DATA_DIRECTORY: z.string().min(1),
+  FIRMINO_DEVELOPMENT: z.enum(["true", "false"]),
+  FIRMINO_GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  FIRMINO_GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  FIRMINO_PROVIDER_IDLE_MS: z.coerce.number().int().positive().default(providerIdleDefaultMs),
 }), process.env)
-// Providers inherit the Engine's environment and run any command the agent asks for; they reach Kolega only through the MCP token.
-delete process.env.KOLEGA_ENGINE_TOKEN
-delete process.env.KOLEGA_GOOGLE_CLIENT_ID
-delete process.env.KOLEGA_GOOGLE_CLIENT_SECRET
+// Providers inherit the Engine's environment and run any command the agent asks for; they reach Firmino only through the MCP token.
+delete process.env.FIRMINO_ENGINE_TOKEN
+delete process.env.FIRMINO_GOOGLE_CLIENT_ID
+delete process.env.FIRMINO_GOOGLE_CLIENT_SECRET
 // The build stops the binary from loading .env, but a shell that exported the build's names would still hand them on.
 delete process.env.MAIN_VITE_GOOGLE_CLIENT_ID
 delete process.env.MAIN_VITE_GOOGLE_CLIENT_SECRET
@@ -40,8 +40,8 @@ const startupStartedAt = performance.now()
 const startedAt = new Date().toISOString()
 const { observability, receiver } = createObservationSystem({
   appSessionId: crypto.randomUUID(),
-  logDirectory: join(environment.KOLEGA_DATA_DIRECTORY, "logs"),
-  development: environment.KOLEGA_DEVELOPMENT === "true",
+  logDirectory: join(environment.FIRMINO_DATA_DIRECTORY, "logs"),
+  development: environment.FIRMINO_DEVELOPMENT === "true",
 })
 
 process.on("message", (message) => {
@@ -60,7 +60,7 @@ process.on("message", (message) => {
   observability.event(forwarded.data)
 })
 
-const database = openDatabase(join(environment.KOLEGA_DATA_DIRECTORY, "kolega.sqlite"))
+const database = openDatabase(join(environment.FIRMINO_DATA_DIRECTORY, "firmino.sqlite"))
 const mcpToken = randomBytes(32).toString("base64url")
 const noticePreviewLength = 100
 
@@ -89,15 +89,15 @@ function turnNotice(end: QueuedTurnEnd): EngineTurnNotice | undefined {
 }
 
 const openConsent = (url: string) => process.send?.({ type: "open-consent", url })
-const accounts = new ProviderAccounts(database, observability, environment.KOLEGA_DATA_DIRECTORY, openConsent)
+const accounts = new ProviderAccounts(database, observability, environment.FIRMINO_DATA_DIRECTORY, openConsent)
 const memory = new Memory(database)
 const conversation = new Conversation(database, observability, accounts, memory, {
   token: mcpToken,
   // Read when a provider session opens, after the server below is listening.
   get url() {
-    return `http://127.0.0.1:${server.port}${kolegaMcpPath}`
+    return `http://127.0.0.1:${server.port}${firminoMcpPath}`
   },
-}, environment.KOLEGA_PROVIDER_IDLE_MS, (end) => {
+}, environment.FIRMINO_PROVIDER_IDLE_MS, (end) => {
   const notice = turnNotice(end)
 
   if (notice) {
@@ -111,12 +111,12 @@ const triggers = new Triggers(database, conversation, observability, () => googl
 const browser = new Browser(observability, triggers)
 const whatsapp = new Whatsapp(database, observability, triggers)
 const discord = new Discord(database, observability, triggers)
-const google = new Google(database, observability, triggers, openConsent, environment.KOLEGA_GOOGLE_CLIENT_ID ? { id: environment.KOLEGA_GOOGLE_CLIENT_ID, ...(environment.KOLEGA_GOOGLE_CLIENT_SECRET ? { secret: environment.KOLEGA_GOOGLE_CLIENT_SECRET } : {}) } : undefined)
+const google = new Google(database, observability, triggers, openConsent, environment.FIRMINO_GOOGLE_CLIENT_ID ? { id: environment.FIRMINO_GOOGLE_CLIENT_ID, ...(environment.FIRMINO_GOOGLE_CLIENT_SECRET ? { secret: environment.FIRMINO_GOOGLE_CLIENT_SECRET } : {}) } : undefined)
 // The router is built before the server listens: built after, it costs about 3 ms more of boot.
 const server = createEngineServer({
-  token: environment.KOLEGA_ENGINE_TOKEN,
+  token: environment.FIRMINO_ENGINE_TOKEN,
   handler: new RPCHandler(createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, memory, routines, appointments, triggers, browser, whatsapp, google, discord })),
-  mcp: { token: mcpToken, handle: (request) => handleKolegaMcp(request, (mcp) => {
+  mcp: { token: mcpToken, handle: (request) => handleFirminoMcp(request, (mcp) => {
     memory.registerTools(mcp)
     routines.registerTools(mcp)
     appointments.registerTools(mcp)

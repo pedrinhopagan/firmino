@@ -77,7 +77,7 @@ function Messages({ client }: { client: EngineClient }) {
           </Button>
         )}
         {messages.error && <p className="my-auto max-w-64 self-center text-center text-xs text-destructive-foreground" role="alert">Não foi possível carregar a conversa: {messages.error.message}</p>}
-        {empty && <p className="my-auto max-w-64 self-center text-center text-xs text-muted-foreground">Peça algo ao Kolega. As Rotinas e os Gatilhos também respondem aqui.</p>}
+        {empty && <p className="my-auto max-w-64 self-center text-center text-xs text-muted-foreground">Peça algo ao Firmino. As Rotinas e os Gatilhos também respondem aqui.</p>}
         {cached.slice(hidden).map((message, index, shown) => <Message key={message.id} message={message} previous={shown[index - 1]} />)}
         <LiveTurn />
       </div>
@@ -169,7 +169,7 @@ function Composer({ client }: { client: EngineClient }) {
       {asking.error && <p className="m-0 px-1 text-xs text-destructive-foreground" role="alert">Não foi possível responder: {asking.error.message}</p>}
       <div className="flex flex-col overflow-hidden rounded-xl border bg-surface-raised shadow-composer transition-colors duration-150 focus-within:border-input">
         <QuestionPanel asking={asking} />
-        <textarea ref={field} autoFocus className="max-h-40 min-h-10 resize-none bg-transparent px-3 pt-3 pb-1 text-sm leading-relaxed text-foreground outline-none [field-sizing:content] placeholder:text-placeholder" rows={1} placeholder={asking.question ? "Ou escreva outra resposta" : "Escreva para o Kolega"} aria-label={asking.question ? "Outra resposta" : "Mensagem"} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} />
+        <textarea ref={field} autoFocus className="max-h-40 min-h-10 resize-none bg-transparent px-3 pt-3 pb-1 text-sm leading-relaxed text-foreground outline-none [field-sizing:content] placeholder:text-placeholder" rows={1} placeholder={asking.question ? "Ou escreva outra resposta" : "Escreva para o Firmino"} aria-label={asking.question ? "Outra resposta" : "Mensagem"} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} />
         <div className="flex items-center gap-2 px-1.5 pb-1.5">
           <ProviderPicker client={client} />
           {running && (

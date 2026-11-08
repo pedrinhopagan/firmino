@@ -7,8 +7,8 @@ export type ThemeId = (typeof themes)[number]["id"]
 export type ThemeMode = (typeof themeModes)[number]
 export type ThemeAppearance = Exclude<ThemeMode, "system">
 
-const themeStorageKey = "kolega.theme"
-const modeStorageKey = "kolega.theme-mode"
+const themeStorageKey = "firmino.theme"
+const modeStorageKey = "firmino.theme-mode"
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)")
 
 function readTheme(): ThemeId {

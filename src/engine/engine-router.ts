@@ -3,7 +3,7 @@ import { engineContract } from "@src/shared/engine-contract"
 import type { Appointments } from "./appointments"
 import type { Browser } from "./browser"
 import type { Conversation } from "./conversation"
-import type { KolegaDatabase } from "./database"
+import type { FirminoDatabase } from "./database"
 import type { Discord } from "./discord"
 import type { Memory } from "./memory"
 import type { ObservationReceiver, Observability } from "./observability"
@@ -50,7 +50,7 @@ async function* surfacedStream<T>(stream: AsyncIterable<T>) {
   }
 }
 
-export function createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, memory, routines, appointments, triggers, browser, whatsapp, google, discord }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: KolegaDatabase; accounts: ProviderAccounts; conversation: Conversation; memory: Pick<Memory, "clear" | "forget">; routines: Pick<Routines, "save" | "remove">; appointments: Pick<Appointments, "events" | "complete" | "dismiss" | "remove">; triggers: Pick<Triggers, "save" | "remove">; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google; discord: Discord }) {
+export function createEngineRouter({ startedAt, observability, receiver, database, accounts, conversation, memory, routines, appointments, triggers, browser, whatsapp, google, discord }: { startedAt: string; observability: Observability; receiver: ObservationReceiver; database: FirminoDatabase; accounts: ProviderAccounts; conversation: Conversation; memory: Pick<Memory, "clear" | "forget">; routines: Pick<Routines, "save" | "remove">; appointments: Pick<Appointments, "events" | "complete" | "dismiss" | "remove">; triggers: Pick<Triggers, "save" | "remove">; browser: Pick<Browser, "interrupt">; whatsapp: Whatsapp; google: Google; discord: Discord }) {
   const operations = implement(engineContract).$context<EngineContext>().use(async ({ next, context, path }) => {
     try {
       const operation = path.join(".").toLowerCase()

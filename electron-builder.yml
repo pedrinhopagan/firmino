@@ -1,5 +1,5 @@
-appId: com.kolega.app
-productName: Kolega
+appId: com.firmino.app
+productName: Firmino
 directories:
   output: release
 files:
@@ -13,7 +13,7 @@ extraResources:
 npmRebuild: false
 linux:
   target: AppImage
-  executableName: kolega
+  executableName: firmino
   category: Utility
   synopsis: Secretário pessoal que fica aberto no seu computador
   syncDesktopName: true
