@@ -124,7 +124,7 @@ function ZenConnection({ client }: { client: EngineClient }) {
   const current = choose.isPending ? choose.variables : chosen.data?.identity
 
   return (
-    <SettingsSection title="Navegador" description="O navegador do Kolega entra nos sites com os cookies da conta do Zen escolhida. Ele lê uma cópia e nunca altera o Zen.">
+    <SettingsSection title="Navegador" description="O navegador do Firmino entra nos sites com os cookies da conta do Zen escolhida. Ele lê uma cópia e nunca altera o Zen.">
       <div className={settingsGroupClassName}>
         {identities.isPending && <p className={settingsNoteClassName}>Lendo o perfil do Zen…</p>}
         {identities.error && <p className={settingsErrorClassName} role="alert">Não foi possível ler o perfil do Zen: {identities.error.message}</p>}
@@ -144,7 +144,7 @@ function ZenConnection({ client }: { client: EngineClient }) {
             ))}
           </fieldset>
         )}
-        {choose.isSuccess && <p className={settingsNoteClassName} role="status">O Kolega usa esta conta na próxima vez que importar os cookies do Zen.</p>}
+        {choose.isSuccess && <p className={settingsNoteClassName} role="status">O Firmino usa esta conta na próxima vez que importar os cookies do Zen.</p>}
         {choose.error && <p className={settingsErrorClassName} role="alert">{choose.error.message}</p>}
       </div>
     </SettingsSection>

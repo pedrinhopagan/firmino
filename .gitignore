@@ -11,4 +11,4 @@ logs/
 .env
 .koworker/
 .optmem/
-.kolega-bench/
+.firmino-bench/

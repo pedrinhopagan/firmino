@@ -8,14 +8,14 @@ type Span = Extract<Observation, { kind: "span" }>
 const spanTimeoutMs = 30_000
 
 /** The production build run as `electron .`, with its data in `userData`, until `quit`. */
-export async function launchKolega(userData: string, env?: Record<string, string>) {
+export async function launchFirmino(userData: string, env?: Record<string, string>) {
   const directory = resolve(userData)
   const logPath = join(directory, "logs", "observations.jsonl")
   await mkdir(join(directory, "logs"), { recursive: true })
   const offset = await Bun.file(logPath).exists() ? (await Bun.file(logPath).text()).length : 0
   const { ELECTRON_RUN_AS_NODE: _, ...inherited } = process.env
   const spawnedAt = Date.now()
-  const app = Bun.spawn(["node_modules/electron/dist/electron", "."], { env: { ...inherited, ...env, KOLEGA_USER_DATA: directory }, stdout: "ignore", stderr: "ignore" })
+  const app = Bun.spawn(["node_modules/electron/dist/electron", "."], { env: { ...inherited, ...env, FIRMINO_USER_DATA: directory }, stdout: "ignore", stderr: "ignore" })
 
   async function observations() {
     const text = await Bun.file(logPath).exists() ? await Bun.file(logPath).text() : ""

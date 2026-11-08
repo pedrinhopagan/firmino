@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
 import type { DiscordStatus } from "@src/shared/discord"
 import { parse } from "@src/shared/parse"
-import type { KolegaDatabase } from "./database"
+import type { FirminoDatabase } from "./database"
 import { externalContent } from "./external-content"
 import type { Observability } from "./observability"
 import { localMinute } from "./routines"
@@ -76,14 +76,14 @@ async function call<Schema extends z.ZodType>(token: string, schema: Schema, pat
 }
 
 /**
- * Kolega's Discord: the user's own account, reached with the token the user pasted, and the agent's tools to find a chat and send to it as the user.
+ * Firmino's Discord: the user's own account, reached with the token the user pasted, and the agent's tools to find a chat and send to it as the user.
  * It only calls Discord's HTTP API when a tool runs, so it holds no socket and receives nothing.
  */
 export class Discord {
   /** Why Discord ended the last connection, shown until the user connects again. */
   private ended?: string
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly triggers: Pick<Triggers, "mayMessage">) {}
+  constructor(private readonly database: FirminoDatabase, private readonly observability: Observability, private readonly triggers: Pick<Triggers, "mayMessage">) {}
 
   status(): DiscordStatus {
     const account = this.database.state.get("discord.account")

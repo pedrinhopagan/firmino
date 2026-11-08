@@ -3,8 +3,8 @@ import { z } from "zod"
 import type { ConversationEvent, ConversationMessage, FavoriteModel, ProviderChoice, QuestionAnswers, TurnOutcome, WorkEntry } from "@src/shared/conversation"
 import { favoriteModel, providerEffort } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
-import type { KolegaDatabase } from "./database"
-import type { KolegaMcpConnection } from "./kolega-mcp"
+import type { FirminoDatabase } from "./database"
+import type { FirminoMcpConnection } from "./firmino-mcp"
 import type { Memory } from "./memory"
 import type { Observability } from "./observability"
 import { ClaudeSession } from "./providers/claude"
@@ -15,9 +15,9 @@ import { localMinute } from "./routines"
 
 const storedFavorites = z.string().transform((value): unknown => JSON.parse(value)).pipe(z.array(favoriteModel))
 
-const speakers = { user: "Usuário", assistant: "Kolega" }
+const speakers = { user: "Usuário", assistant: "Firmino" }
 
-/** A turn Kolega starts on its own: a Rotina's prompt, or a Gatilho's instruction with the messages that fired it. */
+/** A turn Firmino starts on its own: a Rotina's prompt, or a Gatilho's instruction with the messages that fired it. */
 export interface QueuedTurn {
   text: string
   routine?: string
@@ -89,7 +89,7 @@ const sessionTypes = {
   claude: (options: ProviderSessionOptions) => new ClaudeSession(options),
 }
 
-/** The one conversation Kolega keeps: its messages, the provider account that answers and the turn in progress. Each account keeps its own session. */
+/** The one conversation Firmino keeps: its messages, the provider account that answers and the turn in progress. Each account keeps its own session. */
 export class Conversation {
   private readonly sessions = new Map<string, ProviderSession>()
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -98,7 +98,7 @@ export class Conversation {
   /** Settles when the turn in progress ends. */
   private idle: Promise<TurnOutcome> = Promise.resolve("completed")
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, private readonly accounts: ProviderAccounts, private readonly memory: Memory, private readonly mcp: KolegaMcpConnection, private readonly providerIdleMs: number, private readonly onQueuedTurnEnd: (end: QueuedTurnEnd) => void) {}
+  constructor(private readonly database: FirminoDatabase, private readonly observability: Observability, private readonly accounts: ProviderAccounts, private readonly memory: Memory, private readonly mcp: FirminoMcpConnection, private readonly providerIdleMs: number, private readonly onQueuedTurnEnd: (end: QueuedTurnEnd) => void) {}
 
   async send(text: string) {
     await this.accounts.ready()

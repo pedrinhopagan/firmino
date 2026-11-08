@@ -6,7 +6,7 @@ import { ORPCError } from "@orpc/server"
 import { z } from "zod"
 import { type NewProviderAccount, type ProviderAccount, providerAccount, type ProviderId, type ProviderStatus } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
-import type { KolegaDatabase } from "../database"
+import type { FirminoDatabase } from "../database"
 import { adoptLoginShellPath } from "../login-shell-path"
 import type { Observability } from "../observability"
 import { claudeLogin, claudeStatus } from "./claude"
@@ -38,7 +38,7 @@ const t3Settings = z.object({
   })).default({}),
 })
 const t3Drivers: Record<string, ProviderId> = { codex: "codex", claudeAgent: "claude" }
-/** T3 Code's default instances are Kolega's default accounts: the same home. */
+/** T3 Code's default instances are Firmino's default accounts: the same home. */
 const t3DefaultIds: Record<string, string> = { codex: "codex", claudeAgent: "claude" }
 
 /** The Codex and Claude accounts T3 Code has; none when T3 Code is not installed. */
@@ -103,7 +103,7 @@ function merged(current: ProviderAccount[], incoming: ProviderAccount[]) {
 }
 
 /**
- * The provider accounts Kolega can answer with, as T3 Code's provider instances: each one is a provider CLI pointed at its own home.
+ * The provider accounts Firmino can answer with, as T3 Code's provider instances: each one is a provider CLI pointed at its own home.
  * It owns the saved list, the launch of each account's CLI, its status and its sign-in.
  */
 export class ProviderAccounts {
@@ -111,7 +111,7 @@ export class ProviderAccounts {
   private readonly logins = new Map<string, ProviderLogin>()
   private readonly managedRoot: string
 
-  constructor(private readonly database: KolegaDatabase, private readonly observability: Observability, dataDirectory: string, private readonly openPage: (url: string) => void) {
+  constructor(private readonly database: FirminoDatabase, private readonly observability: Observability, dataDirectory: string, private readonly openPage: (url: string) => void) {
     this.managedRoot = join(dataDirectory, "providers")
   }
 
@@ -131,7 +131,7 @@ export class ProviderAccounts {
     return this.save(merged(defaultAccounts, readT3Accounts()))
   }
 
-  /** A new account in a home folder Kolega creates, unless the user points it at an existing home. */
+  /** A new account in a home folder Firmino creates, unless the user points it at an existing home. */
   async add(input: NewProviderAccount) {
     const id = `${input.provider}-${crypto.randomUUID().slice(0, 8)}`
     const home = input.home ? resolve(t3Path(input.home) ?? input.home) : join(this.managedRoot, input.provider, id)
@@ -149,7 +149,7 @@ export class ProviderAccounts {
     return account
   }
 
-  /** Forgets the account; a home Kolega created goes with it, a home the user pointed at stays. */
+  /** Forgets the account; a home Firmino created goes with it, a home the user pointed at stays. */
   async remove(id: string) {
     const account = this.get(id)
 

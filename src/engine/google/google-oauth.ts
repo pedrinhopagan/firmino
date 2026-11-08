@@ -31,11 +31,11 @@ export class GoogleGrantError extends Error {}
 export class GoogleConsentError extends Error {}
 
 const pages = {
-  connected: { title: "Google conectado", detail: "Pode fechar esta aba e voltar para o Kolega.", tone: "#4ade80" },
-  denied: { title: "O Google não permitiu a conexão", detail: "Pode fechar esta aba e tentar de novo no Kolega.", tone: "#f87171" },
-  failed: { title: "O Kolega não conseguiu concluir a conexão", detail: "Pode fechar esta aba e tentar de novo no Kolega.", tone: "#f87171" },
-  partial: { title: "Faltou uma permissão", detail: "O Kolega precisa do Gmail e do Google Agenda. Volte ao Kolega e conecte de novo, marcando as duas.", tone: "#f87171" },
-  wrongState: { title: "Este link não é o que o Kolega está esperando", detail: "Volte ao Kolega e conecte o Google de novo.", tone: "#f87171" },
+  connected: { title: "Google conectado", detail: "Pode fechar esta aba e voltar para o Firmino.", tone: "#4ade80" },
+  denied: { title: "O Google não permitiu a conexão", detail: "Pode fechar esta aba e tentar de novo no Firmino.", tone: "#f87171" },
+  failed: { title: "O Firmino não conseguiu concluir a conexão", detail: "Pode fechar esta aba e tentar de novo no Firmino.", tone: "#f87171" },
+  partial: { title: "Faltou uma permissão", detail: "O Firmino precisa do Gmail e do Google Agenda. Volte ao Firmino e conecte de novo, marcando as duas.", tone: "#f87171" },
+  wrongState: { title: "Este link não é o que o Firmino está esperando", detail: "Volte ao Firmino e conecte o Google de novo.", tone: "#f87171" },
 }
 
 function page(content: (typeof pages)[keyof typeof pages], status: number) {
@@ -44,7 +44,7 @@ function page(content: (typeof pages)[keyof typeof pages], status: number) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${content.title} · Kolega</title>
+<title>${content.title} · Firmino</title>
 <style>
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b0b0b; color: #f5f5f5; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 26rem; margin: 1.5rem; padding: 2rem; background: #161616; border: 1px solid #303030; border-radius: 1.5rem; }

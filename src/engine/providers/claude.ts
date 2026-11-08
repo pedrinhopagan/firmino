@@ -3,8 +3,8 @@ import { join } from "node:path"
 import { z } from "zod"
 import { providerEffort, type ProviderStatus } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
-import { kolegaMcpTokenVariable, kolegaToolTimeoutMs } from "../kolega-mcp"
-import { clipDetail, errorMessage, imagePath, kolegaInstructions, markLegacy, kolegaWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult, type WorkUpdate } from "./provider"
+import { firminoMcpTokenVariable, firminoToolTimeoutMs } from "../firmino-mcp"
+import { clipDetail, errorMessage, imagePath, firminoInstructions, markLegacy, firminoWorkingDirectory, type ProviderLaunch, type ProviderLogin, type ProviderSession, type ProviderSessionOptions, type TurnListener, type TurnResult, type WorkUpdate } from "./provider"
 
 const statusTimeoutMs = 10_000
 const loginUrlTimeoutMs = 20_000
@@ -181,11 +181,11 @@ export class ClaudeSession implements ProviderSession {
         prompt: inbox,
         options: {
           pathToClaudeCodeExecutable: this.options.launch.executable,
-          cwd: kolegaWorkingDirectory,
+          cwd: firminoWorkingDirectory,
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
           includePartialMessages: true,
-          systemPrompt: { type: "preset", preset: "claude_code", append: kolegaInstructions },
+          systemPrompt: { type: "preset", preset: "claude_code", append: firminoInstructions },
           settingSources: [],
           strictMcpConfig: true,
           skills: [],
@@ -195,8 +195,8 @@ export class ClaudeSession implements ProviderSession {
           // Bypass mode still asks before AskUserQuestion, so its questions reach the user.
           canUseTool: (name, input, { toolUseID }) => this.permit(name, input, toolUseID),
           // Claude expands the variable itself, so the token stays out of the --mcp-config argument other users can read.
-          env: { ...process.env, ...this.options.launch.env, [kolegaMcpTokenVariable]: this.options.mcp.token, MCP_TOOL_TIMEOUT: String(kolegaToolTimeoutMs) },
-          mcpServers: { kolega: { type: "http", url: this.options.mcp.url, headers: { authorization: `Bearer \${${kolegaMcpTokenVariable}}` } } },
+          env: { ...process.env, ...this.options.launch.env, [firminoMcpTokenVariable]: this.options.mcp.token, MCP_TOOL_TIMEOUT: String(firminoToolTimeoutMs) },
+          mcpServers: { firmino: { type: "http", url: this.options.mcp.url, headers: { authorization: `Bearer \${${firminoMcpTokenVariable}}` } } },
           ...(model ? { model } : {}),
           ...(this.sessionId ? { resume: this.sessionId } : {}),
         },
@@ -444,7 +444,7 @@ function loginUrl(output: ReadableStream<Uint8Array<ArrayBuffer>>) {
 
 /** Subscription sign-in through `claude auth login`: the page shows a code, and the CLI saves the login in the account's CLAUDE_CONFIG_DIR once it reads that code. */
 export async function claudeLogin(launch: ProviderLaunch): Promise<ProviderLogin> {
-  const child = Bun.spawn([launch.executable, "auth", "login", "--claudeai"], { cwd: kolegaWorkingDirectory, env: { ...process.env, ...launch.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe" })
+  const child = Bun.spawn([launch.executable, "auth", "login", "--claudeai"], { cwd: firminoWorkingDirectory, env: { ...process.env, ...launch.env }, stdin: "pipe", stdout: "pipe", stderr: "pipe" })
   const timer = setTimeout(() => child.kill(), loginUrlTimeoutMs)
   const url = await loginUrl(child.stdout).finally(() => clearTimeout(timer)).catch((error: unknown) => {
     child.kill()
@@ -469,7 +469,7 @@ export async function claudeLogin(launch: ProviderLaunch): Promise<ProviderLogin
 
 /** The models this Claude Code offers, as its own /model menu lists them, each under the full id its alias resolves to. */
 async function claudeModels(launch: ProviderLaunch) {
-  const models = query({ prompt: new Inbox(), options: { pathToClaudeCodeExecutable: launch.executable, cwd: kolegaWorkingDirectory, env: { ...process.env, ...launch.env }, settingSources: [] } })
+  const models = query({ prompt: new Inbox(), options: { pathToClaudeCodeExecutable: launch.executable, cwd: firminoWorkingDirectory, env: { ...process.env, ...launch.env }, settingSources: [] } })
 
   try {
     const rows = await models.supportedModels()

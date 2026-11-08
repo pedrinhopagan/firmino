@@ -14,10 +14,10 @@ import { compactSize, WindowPlacement, wideSize } from "./window-placement"
 const appProfile = resolveAppProfile(app.isPackaged)
 
 // One data folder per machine in dev, outside the checkout, so every worktree opens the same data.
-if (process.env.KOLEGA_USER_DATA) {
-  app.setPath("userData", process.env.KOLEGA_USER_DATA)
+if (process.env.FIRMINO_USER_DATA) {
+  app.setPath("userData", process.env.FIRMINO_USER_DATA)
 } else if (!app.isPackaged) {
-  app.setPath("userData", join(app.getPath("appData"), "kolega-dev"))
+  app.setPath("userData", join(app.getPath("appData"), "firmino-dev"))
 }
 
 app.setName(appProfile.name)
@@ -198,7 +198,7 @@ const toast = new AppointmentToast({
 })
 const browser = new Browser({
   reply: (reply) => void engine.send(reply),
-  onHandoff: (reason) => notify({ title: "O Kolega precisa de você", body: reason }),
+  onHandoff: (reason) => notify({ title: "O Firmino precisa de você", body: reason }),
   onShownChange(shown) {
     if (mainWindow) {
       placement.resize(mainWindow, shown ? wideSize : compactSize)
@@ -206,7 +206,7 @@ const browser = new Browser({
   },
   zenIdentity: async () => (await engineClient().zen.identity()).identity,
 })
-const engineName = process.platform === "win32" ? "kolega-engine.exe" : "kolega-engine"
+const engineName = process.platform === "win32" ? "firmino-engine.exe" : "firmino-engine"
 const engine = new EngineProcess({
   executable: app.isPackaged ? join(process.resourcesPath, "engine", engineName) : join(app.getAppPath(), "dist-engine", engineName),
   dataDirectory: app.getPath("userData"),
@@ -253,7 +253,7 @@ void app.whenReady().then(async () => {
     tray = new Tray(icon)
     tray.setToolTip(appProfile.name)
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: "Abrir o Kolega", click: () => reopenWindow() },
+      { label: "Abrir o Firmino", click: () => reopenWindow() },
       { type: "separator" },
       { label: "Sair", click: () => app.quit() },
     ]))

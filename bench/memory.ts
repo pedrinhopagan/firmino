@@ -7,9 +7,9 @@ import { resolveAppProfile } from "@src/shared/app-profile"
 import { providerId } from "@src/shared/conversation"
 import type { engineContract } from "@src/shared/engine-contract"
 import { parse } from "@src/shared/parse"
-import { launchKolega } from "./app"
+import { launchFirmino } from "./app"
 
-const { values } = parseArgs({ args: Bun.argv.slice(2), options: { "user-data": { type: "string", default: ".kolega-bench" }, "settle-ms": { type: "string", default: "5000" }, "idle-ms": { type: "string", default: "20000" } } })
+const { values } = parseArgs({ args: Bun.argv.slice(2), options: { "user-data": { type: "string", default: ".firmino-bench" }, "settle-ms": { type: "string", default: "5000" }, "idle-ms": { type: "string", default: "20000" } } })
 const settleMs = Number(values["settle-ms"])
 const providers = providerId.options
 const debuggingPort = resolveAppProfile(false).debuggingPort
@@ -71,16 +71,16 @@ async function pssMb(pid: number) {
 
 const chromiumRoles: [string, string][] = [["--type=gpu-process", "GPU"], ["--type=renderer", "Renderer"], ["--type=utility", "Utility (network, storage)"], ["--type=zygote", "Zygotes"]]
 
-/** Which part of Kolega a process belongs to; provider children are its MCP servers and the commands it runs. */
+/** Which part of Firmino a process belongs to; provider children are its MCP servers and the commands it runs. */
 function roles(mainPid: number) {
   const rows = processRows()
   const main = rows.find((row) => row.pid === mainPid)
 
   if (!main) {
-    throw new Error("Kolega is not running")
+    throw new Error("Firmino is not running")
   }
 
-  const engine = rows.find((row) => row.ppid === mainPid && row.args.endsWith("kolega-engine"))
+  const engine = rows.find((row) => row.ppid === mainPid && row.args.endsWith("firmino-engine"))
   const owned = new Map<number, string>(descendants(rows, main).map((row) => [row.pid, chromiumRoles.find(([flag]) => row.args.includes(flag))?.[1] ?? "Main"]))
 
   if (!engine) {
@@ -116,7 +116,7 @@ function runningProviders(mainPid: number) {
   return providers.filter((provider) => running.has(provider))
 }
 
-const app = await launchKolega(values["user-data"], { KOLEGA_PROVIDER_IDLE_MS: values["idle-ms"] })
+const app = await launchFirmino(values["user-data"], { FIRMINO_PROVIDER_IDLE_MS: values["idle-ms"] })
 const states: Record<string, Record<string, number>> = {}
 
 try {

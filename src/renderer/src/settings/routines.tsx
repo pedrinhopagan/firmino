@@ -73,7 +73,7 @@ export function Routines({ client }: { client: EngineClient }) {
   const repeating = data?.filter((routine) => routine.frequency.form !== "once")
 
   return (
-    <SettingsSection title="Suas rotinas" description="Tarefas que o Kolega repete sozinho. Para criar ou mudar uma rotina, peça na conversa.">
+    <SettingsSection title="Suas rotinas" description="Tarefas que o Firmino repete sozinho. Para criar ou mudar uma rotina, peça na conversa.">
       <div className={settingsGroupClassName}>
         {!data && !error && <p className={settingsNoteClassName}>Carregando as rotinas…</p>}
         {error && <p className={settingsErrorClassName} role="alert">{error.message}</p>}
@@ -92,7 +92,7 @@ export function Schedules({ client }: { client: EngineClient }) {
 
   return (
     <>
-      <SettingsSection title="Próximos" description="Tarefas que o Kolega faz uma vez, no horário marcado. Para marcar uma, peça na conversa.">
+      <SettingsSection title="Próximos" description="Tarefas que o Firmino faz uma vez, no horário marcado. Para marcar uma, peça na conversa.">
         <div className={settingsGroupClassName}>
           {!data && !error && <p className={settingsNoteClassName}>Carregando os agendamentos…</p>}
           {error && <p className={settingsErrorClassName} role="alert">{error.message}</p>}
@@ -151,7 +151,7 @@ function RoutineRow({ client, routine }: { client: EngineClient; routine: Routin
       <ConfirmDialog
         ref={confirm}
         title={`Remover ${once ? "o agendamento" : "a rotina"} “${routine.name}”?`}
-        description={`O Kolega não vai mais executá-${once ? "lo" : "la"}. Para ${once ? "marcar" : "criar"} de novo, peça na conversa.`}
+        description={`O Firmino não vai mais executá-${once ? "lo" : "la"}. Para ${once ? "marcar" : "criar"} de novo, peça na conversa.`}
         confirmLabel="Remover"
         onConfirm={() => remove()}
       />

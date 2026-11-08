@@ -4,7 +4,7 @@ import type { TurnOutcome } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
 import { type Frequency, frequency, type Routine, routine, time, weekday, weekdays } from "@src/shared/routine"
 import type { Conversation } from "./conversation"
-import type { KolegaDatabase } from "./database"
+import type { FirminoDatabase } from "./database"
 import type { Observability } from "./observability"
 
 const workdays = weekdays.slice(0, 5)
@@ -217,7 +217,7 @@ function text(value: string) {
 }
 
 /**
- * Kolega's Rotinas: scheduled reminders and tasks the agent manages through its MCP tools.
+ * Firmino's Rotinas: scheduled reminders and tasks the agent manages through its MCP tools.
  * One timer waits for the earliest active Rotina. A run missed while the app was closed happens once on the next start;
  * a repeating Rotina then continues from its next time after now.
  */
@@ -226,13 +226,13 @@ export class Routines {
   private firing?: Promise<void>
   private closed = false
 
-  constructor(private readonly database: KolegaDatabase, private readonly conversation: Pick<Conversation, "runQueued">, private readonly observability: Observability) {
+  constructor(private readonly database: FirminoDatabase, private readonly conversation: Pick<Conversation, "runQueued">, private readonly observability: Observability) {
     this.schedule()
   }
 
   registerTools(server: McpServer) {
     server.registerTool("save_routine", {
-      description: "Create or change one Rotina: a named instruction that Kolega runs for you on a schedule, as a new turn in this conversation. Use it for tasks the user wants you to do later or repeatedly. For something the user must do or attend on a day, use save_appointment instead. Give an id to change an existing Rotina; omit it to create one. Times are the user's local time.",
+      description: "Create or change one Rotina: a named instruction that Firmino runs for you on a schedule, as a new turn in this conversation. Use it for tasks the user wants you to do later or repeatedly. For something the user must do or attend on a day, use save_appointment instead. Give an id to change an existing Rotina; omit it to create one. Times are the user's local time.",
       inputSchema: saveInput,
     }, (input) => this.observability.span({ name: "routines.save" }, () => text(`Rotina ${input.id ? "changed" : "created"}: ${describe(this.save(input))}`)))
     server.registerTool("list_routines", {

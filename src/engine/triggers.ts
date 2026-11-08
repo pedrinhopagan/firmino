@@ -4,7 +4,7 @@ import type { TurnOutcome } from "@src/shared/conversation"
 import { parse } from "@src/shared/parse"
 import { type Trigger, trigger, triggerSource, type TriggerTarget, targets } from "@src/shared/trigger"
 import type { Conversation } from "./conversation"
-import type { KolegaDatabase } from "./database"
+import type { FirminoDatabase } from "./database"
 import { externalContent } from "./external-content"
 import type { Observability } from "./observability"
 import { localMinute } from "./routines"
@@ -117,7 +117,7 @@ function text(value: string) {
 }
 
 /**
- * Kolega's Gatilhos: instructions that run a turn when a message arrives from a chat or an e-mail sender the user named.
+ * Firmino's Gatilhos: instructions that run a turn when a message arrives from a chat or an e-mail sender the user named.
  * Messages from one target gather into a burst that runs one turn, after a quiet pause or once the turn in progress ends.
  * Bursts live in memory: a message that arrives while the Engine stops runs nothing.
  */
@@ -128,11 +128,11 @@ export class Triggers {
   private closed = false
 
   /** `changed` runs after every change a tool makes to the Gatilhos, so a source can start or stop listening. */
-  constructor(private readonly database: KolegaDatabase, private readonly conversation: Pick<Conversation, "runQueued">, private readonly observability: Observability, private readonly changed: () => void) {}
+  constructor(private readonly database: FirminoDatabase, private readonly conversation: Pick<Conversation, "runQueued">, private readonly observability: Observability, private readonly changed: () => void) {}
 
   registerTools(server: McpServer) {
     server.registerTool("save_trigger", {
-      description: "Create or change one Gatilho: an instruction Kolega runs as a new turn in this conversation when a new WhatsApp message arrives in one of the chats the user named, or a new e-mail arrives from one of the senders the user named. For WhatsApp, find each chat's id with whatsapp_chats first and ask the user when a name matches more than one chat. A Gatilho never listens to every chat or every sender. Give an id to change an existing Gatilho; omit it to create one.",
+      description: "Create or change one Gatilho: an instruction Firmino runs as a new turn in this conversation when a new WhatsApp message arrives in one of the chats the user named, or a new e-mail arrives from one of the senders the user named. For WhatsApp, find each chat's id with whatsapp_chats first and ask the user when a name matches more than one chat. A Gatilho never listens to every chat or every sender. Give an id to change an existing Gatilho; omit it to create one.",
       inputSchema: saveInput,
     }, (input) => this.observability.span({ name: "triggers.save" }, () => text(`Gatilho ${input.id ? "changed" : "created"}: ${describe(this.save(input))}`)))
     server.registerTool("list_triggers", {

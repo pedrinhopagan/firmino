@@ -54,7 +54,7 @@ export const toolLabels: Partial<Record<string, ToolLabel>> = {
   gmail_trash: label("Movendo e-mail para a lixeira", "Moveu e-mail para a lixeira"),
 
   browser: label("Navegando na web", "Navegou na web"),
-  screenshot: label("Tirando print do Kolega", "Tirou print do Kolega"),
+  screenshot: label("Tirando print do Firmino", "Tirou print do Firmino"),
 
   // Codex
   image_generation: label("Gerando imagem", "Gerou imagem"),

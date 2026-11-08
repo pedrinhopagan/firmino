@@ -21,7 +21,7 @@ const storedMessage = conversationMessage.omit({ work: true })
 const messagePageSize = 50
 const transcriptLimit = 20
 
-/** Opens the Kolega SQLite file and creates its tables on first use. */
+/** Opens the Firmino SQLite file and creates its tables on first use. */
 export function openDatabase(path: string) {
   const db = new Database(path, { create: true, strict: true })
   db.run("PRAGMA journal_mode = WAL")
@@ -269,4 +269,4 @@ export function openDatabase(path: string) {
   }
 }
 
-export type KolegaDatabase = ReturnType<typeof openDatabase>
+export type FirminoDatabase = ReturnType<typeof openDatabase>

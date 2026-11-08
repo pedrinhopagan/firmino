@@ -17,7 +17,7 @@ export const browserAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("close") }),
 ])
 
-/** Engine to Main: run one action on the page, or capture the Kolega window. A later request supersedes one still running. */
+/** Engine to Main: run one action on the page, or capture the Firmino window. A later request supersedes one still running. */
 export const browserRequest = z.object({ type: z.literal("browser-request"), id: z.uuid(), input: z.union([browserAction, z.object({ action: z.literal("screenshot") })]) })
 
 /** Engine to Main: the tool call that sent this request ended before the reply. */

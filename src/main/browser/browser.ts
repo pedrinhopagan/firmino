@@ -6,7 +6,7 @@ import { parse } from "@src/shared/parse"
 import { BrowserDriver } from "./browser-driver"
 import { importZenSession, listZenIdentities } from "./zen-session"
 
-const webPreferences = { partition: "persist:kolega-browser", sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+const webPreferences = { partition: "persist:firmino-browser", sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
 const pageSize = { width: 1280, height: 800 }
 const parked = { x: 1 - pageSize.width, y: 1 - pageSize.height, ...pageSize }
 /** An idle page closes after this, freeing its renderer process; logins stay in the session, so reopening costs one load. */
@@ -198,10 +198,10 @@ export class Browser {
     const image = await this.window?.webContents.capturePage()
 
     if (!image || image.isEmpty()) {
-      throw new Error("The Kolega window is closed. Ask the user to open it.")
+      throw new Error("The Firmino window is closed. Ask the user to open it.")
     }
 
-    const path = join(app.getPath("temp"), `kolega-${Date.now()}.png`)
+    const path = join(app.getPath("temp"), `firmino-${Date.now()}.png`)
     await writeFile(path, image.toPNG())
 
     return path

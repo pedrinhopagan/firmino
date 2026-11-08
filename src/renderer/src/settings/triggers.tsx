@@ -18,7 +18,7 @@ export function Triggers({ client }: { client: EngineClient }) {
   const { data, error } = useQuery(triggersQuery(client))
 
   return (
-    <SettingsSection title="Seus gatilhos" description="O Kolega age quando chega mensagem de uma conversa ou de um remetente que você escolheu. Para criar ou mudar um gatilho, peça na conversa.">
+    <SettingsSection title="Seus gatilhos" description="O Firmino age quando chega mensagem de uma conversa ou de um remetente que você escolheu. Para criar ou mudar um gatilho, peça na conversa.">
       <div className={settingsGroupClassName}>
         {!data && !error && <p className={settingsNoteClassName}>Carregando os gatilhos…</p>}
         {error && <p className={settingsErrorClassName} role="alert">{error.message}</p>}
@@ -57,7 +57,7 @@ function TriggerRow({ client, trigger }: { client: EngineClient; trigger: Trigge
       <ConfirmDialog
         ref={confirm}
         title={`Remover o gatilho “${trigger.name}”?`}
-        description="O Kolega não vai mais agir quando essas mensagens chegarem. Para criar de novo, peça na conversa."
+        description="O Firmino não vai mais agir quando essas mensagens chegarem. Para criar de novo, peça na conversa."
         confirmLabel="Remover"
         onConfirm={() => remove()}
       />

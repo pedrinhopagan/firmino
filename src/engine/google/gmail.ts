@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { z } from "zod"
-import type { KolegaDatabase } from "../database"
+import type { FirminoDatabase } from "../database"
 import { externalContent } from "../external-content"
 import type { Observability } from "../observability"
 import type { TriggerEvent, Triggers } from "../triggers"
@@ -292,13 +292,13 @@ export function registerGmailTools(server: McpServer, { request, triggers, obser
 
 /**
  * Watches the inbox for e-mail Gatilhos: Gmail's history since a stored id, checked every minute, and only while Google is connected
- * and an active e-mail Gatilho exists. The id survives a restart, so mail that arrived while Kolega was closed still fires once.
+ * and an active e-mail Gatilho exists. The id survives a restart, so mail that arrived while Firmino was closed still fires once.
  */
 export class MailWatch {
   private timer?: ReturnType<typeof setInterval>
   private checking = false
 
-  constructor(private readonly deps: { database: KolegaDatabase; request: GoogleRequest; triggers: Pick<Triggers, "deliver" | "wants">; observability: Observability }) {}
+  constructor(private readonly deps: { database: FirminoDatabase; request: GoogleRequest; triggers: Pick<Triggers, "deliver" | "wants">; observability: Observability }) {}
 
   /** Starts or stops the watch to match the connection and the Gatilhos; stopping forgets the id, so a later Gatilho starts from new mail. */
   sync(connected: boolean) {

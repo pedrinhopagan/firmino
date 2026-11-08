@@ -171,7 +171,7 @@ function AddAccount({ client, onDone }: { client: EngineClient; onDone: () => vo
       </div>
       <input className={inputClassName} value={name} placeholder="Nome da conta, como Trabalho" aria-label="Nome da conta" onChange={(event) => setName(event.target.value)} />
       <input className={inputClassName} value={home} placeholder={`${homeNames[provider]} existente (opcional)`} aria-label={`Pasta ${homeNames[provider]}`} onChange={(event) => setHome(event.target.value)} />
-      <p className="m-0 text-2xs text-muted-foreground">Sem pasta, o Kolega cria uma pasta nova e você entra com outra conta.</p>
+      <p className="m-0 text-2xs text-muted-foreground">Sem pasta, o Firmino cria uma pasta nova e você entra com outra conta.</p>
       {add.error && <p className="m-0 text-xs text-destructive-foreground" role="alert">{add.error.message}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onDone}>Cancelar</Button>
