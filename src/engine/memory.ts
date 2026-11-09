@@ -14,6 +14,8 @@ const entryChars = 280
 const rawMax = 16
 /** The most a recall returns, so a vague pattern still fits the provider's tool output. */
 const recallChars = 20_000
+/** A word of a name, long enough to skip "para" and "com". */
+const nameWord = /\p{L}{5,}/gu
 
 const entry = z.string().trim().min(1).max(entryChars).regex(/^[^\r\n]*$/, "One line only: merge them, or note them separately.")
 
@@ -101,6 +103,18 @@ function text(value: string) {
   return { content: [{ type: "text" as const, text: value }] }
 }
 
+/** Lowercase and without accents, so "Unificação" matches "unificacao". */
+function plain(value: string) {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+}
+
+/** The ways a memory writes a local day: 2026-11-09, 09/11 and 9 de novembro. */
+function dayForms(day: string) {
+  const date = new Date(`${day}T00:00`)
+
+  return [day, date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), date.toLocaleDateString("pt-BR", { day: "numeric", month: "long" })]
+}
+
 /**
  * Firmino's permanent memory, after OptMem (github.com/VictorTaelin/OptMem): an append-only log of one-line memories and a binary tree of one-line summaries over it.
  * The agent records and compresses memories through its MCP tools; each provider session reads the memory document when the memory changed since it last read it.
@@ -151,9 +165,15 @@ export class Memory {
 
   registerTools(server: McpServer) {
     server.registerTool("memory_note", {
-      description: `Record one memory in your permanent memory: one line of at most ${entryChars} characters. Returns its id and, when one came due, a compression to do with memory_nap before your next action.`,
+      description: `Record one memory in your permanent memory: one line of at most ${entryChars} characters. Never record a Compromisso, Rotina, Gatilho or calendar event, nor that you created or changed one: their own tools hold them. Returns its id and, when one came due, a compression to do with memory_nap before your next action.`,
       inputSchema: { text: entry.describe("The memory, one dense line in the user's language.") },
     }, (input) => {
+      const owner = this.owner(input.text)
+
+      if (owner) {
+        throw new Error(`Not saved: the ${owner} already holds this and its tools show its current state. If the line also has a lasting fact, note only that fact.`)
+      }
+
       const id = this.database.memories.append({ date: new Date().toLocaleDateString("sv-SE"), text: input.text })
 
       return text([`Saved as #${id}.`, this.compression(id + 1)].filter(Boolean).join("\n\n"))
@@ -186,6 +206,22 @@ export class Memory {
       description: "Open a #lo-hi line of the memory into its two halves, each a summary or, once single, the memory itself.",
       inputSchema: { block: z.string().describe("A block id from the memory, like \"16-31\".") },
     }, (input) => text(this.zoom(parseBlock(input.block))))
+  }
+
+  /**
+   * The Compromisso, Rotina or Gatilho a memory copies: the line names its kind or, for a Compromisso, its day, and a word of its name.
+   * Both are needed, so "a nutricionista é a Dra. Ana" stays a memory while a Compromisso "Consulta com nutricionista" exists.
+   * ponytail: a line saved before its Compromisso, or a paraphrase that shares no word, passes; the instructions cover those. Compare meaning if they show up.
+   */
+  private owner(memory: string) {
+    const note = plain(memory)
+    const owned = [
+      ...this.database.appointments.list().map((item) => ({ label: `Compromisso "${item.title}"`, name: item.title, marks: ["compromisso", ...dayForms(item.date)] })),
+      ...this.database.routines.list().map((item) => ({ label: `Rotina "${item.name}"`, name: item.name, marks: ["rotina"] })),
+      ...this.database.triggers.list().map((item) => ({ label: `Gatilho "${item.name}"`, name: item.name, marks: ["gatilho"] })),
+    ]
+
+    return owned.find(({ name, marks }) => marks.some((mark) => note.includes(plain(mark))) && plain(name).match(nameWord)?.some((word) => note.includes(word)))?.label
   }
 
   private document(count: number) {
@@ -276,7 +312,7 @@ export class Memory {
     const left = pending.after === 1 ? "1 compression remains after this one." : `${pending.after} compressions remain after this one.`
 
     return [
-      `Compress memories #${blockId(pending.block)} into one line of at most ${entryChars} characters.\nKeep what has lasting effect, drop what does not. Invent nothing.`,
+      `Compress memories #${blockId(pending.block)} into one line of at most ${entryChars} characters.\nKeep what has lasting effect, drop what does not and what a Compromisso, Rotina, Gatilho or calendar event holds. Invent nothing.`,
       body.map((item) => `  ${item}`).join("\n"),
       ...(pending.after > 0 ? [left] : []),
       `Call memory_nap with block "${blockId(pending.block)}" and your line.`,
